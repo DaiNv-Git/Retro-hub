@@ -1,4 +1,6 @@
-import 'dart:async';
+import os
+
+new_code = """import 'dart:async';
 import 'dart:convert';
 import 'dart:ui';
 import 'dart:io';
@@ -8,21 +10,12 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:webview_flutter/webview_flutter.dart' hide X509Certificate;
+import 'package:webview_flutter/webview_flutter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 const _emulatorJsDataPath = String.fromEnvironment('EMULATOR_JS_DATA_PATH');
 
-class MyHttpOverrides extends HttpOverrides {
-  @override
-  HttpClient createHttpClient(SecurityContext? context) {
-    return super.createHttpClient(context)
-      ..badCertificateCallback = (X509Certificate cert, String host, int port) => true;
-  }
-}
-
 void main() async {
-  HttpOverrides.global = MyHttpOverrides();
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
@@ -129,28 +122,28 @@ final List<HomebrewGame> legalGames = [
     title: 'Anguna: Warriors of Virtue',
     developer: 'Bite the Chili Productions',
     description: 'A top-down fantasy action-RPG featuring multiple dungeons, hidden items, and boss fights. Completely free and open-source.',
-    coverUrl: 'https://placehold.co/500x300/5A189A/FFFFFF.png?text=Anguna:+Warriors+of+Virtue', // Placeholder
+    coverUrl: 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&w=500&q=80', // Placeholder
     downloadUrl: 'https://engfordev.top/gbagame/homebrew/anguna.gba', // Example URL
   ),
   const HomebrewGame(
     title: 'Apotris',
     developer: 'akouzoukos',
     description: 'A highly polished block puzzle game designed specifically for the GBA. Fast-paced and fully featured.',
-    coverUrl: 'https://placehold.co/500x300/151026/73DB9A.png?text=Apotris', // Placeholder
+    coverUrl: 'https://images.unsplash.com/photo-1614680376573-df3480f0c6ff?auto=format&fit=crop&w=500&q=80', // Placeholder
     downloadUrl: 'https://engfordev.top/gbagame/homebrew/apotris.gba', // Example URL
   ),
   const HomebrewGame(
     title: 'Celeste Classic GBA',
     developer: 'Lemonhaze',
     description: 'A faithful port of the original Pico-8 Celeste mountain climbing game to the Game Boy Advance.',
-    coverUrl: 'https://placehold.co/500x300/9D4EDD/FFFFFF.png?text=Celeste+Classic', // Placeholder
+    coverUrl: 'https://images.unsplash.com/photo-1522115174737-2497162f69ec?auto=format&fit=crop&w=500&q=80', // Placeholder
     downloadUrl: 'https://engfordev.top/gbagame/homebrew/celeste.gba', // Example URL
   ),
   const HomebrewGame(
     title: 'Goodboy Advance',
     developer: 'Homebrew Community',
     description: 'An exciting and charming platformer created by indie developers for the retro handheld community.',
-    coverUrl: 'https://placehold.co/500x300/222222/FFFFFF.png?text=Goodboy+Advance', // Placeholder
+    coverUrl: 'https://images.unsplash.com/photo-1552820728-8b83bb6b773f?auto=format&fit=crop&w=500&q=80', // Placeholder
     downloadUrl: 'https://engfordev.top/gbagame/homebrew/goodboy.gba', // Example URL
   )
 ];
@@ -285,7 +278,7 @@ class HomebrewLibraryScreen extends StatelessWidget {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                'By ${game.developer}',
+                                'By \${game.developer}',
                                 style: GoogleFonts.outfit(
                                   fontSize: 14,
                                   color: const Color(0xFF9D4EDD),
@@ -309,7 +302,7 @@ class HomebrewLibraryScreen extends StatelessWidget {
                                     // You can implement download logic here or direct play
                                     // For now, we will show a snackbar since URLs are placeholders
                                     ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text('Upload ${game.title} ROM to your server first!')),
+                                      SnackBar(content: Text('Upload \${game.title} ROM to your server first!')),
                                     );
                                   },
                                   icon: const Icon(Icons.cloud_download_rounded, color: Colors.white, size: 20),
@@ -385,7 +378,7 @@ class _ConsoleConfigScreenState extends State<ConsoleConfigScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error selecting file: $e')),
+        SnackBar(content: Text('Error selecting file: \$e')),
       );
     }
   }
@@ -716,3 +709,7 @@ class _EmulatorScreenState extends State<EmulatorScreen> {
     );
   }
 }
+"""
+
+with open('lib/main.dart', 'w') as f:
+    f.write(new_code)
