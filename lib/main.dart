@@ -1,4 +1,3 @@
-import 'dart:math' as math;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -6,15 +5,13 @@ import 'dart:ui';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:gal/gal.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:webview_flutter/webview_flutter.dart' hide X509Certificate;
 
 final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.dark);
 
@@ -36,17 +33,6 @@ void main() async {
     ),
   );
 
-  if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
-    // Run Ad initialization asynchronously so it doesn't block app startup
-    unawaited(() async {
-      try {
-        await AdConsentService.instance.prepare();
-        if (await ConsentInformation.instance.canRequestAds()) {
-          unawaited(MobileAds.instance.initialize());
-        }
-      } catch (_) {}
-    }());
-  }
   runApp(const AiWallpaperApp());
 }
 
@@ -57,7 +43,7 @@ class AiWallpaperApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return ValueListenableBuilder<ThemeMode>(
       valueListenable: themeNotifier,
-      builder: (_, currentTheme, __) {
+      builder: (context, currentTheme, child) {
         return MaterialApp(
           title: 'Retro Hub',
           debugShowCheckedModeBanner: false,
@@ -111,6 +97,16 @@ class Wallpaper {
     required this.thumbUrl,
     required this.fullUrl,
     required this.accent,
+    this.sourceUrl,
+    this.platform,
+    this.region,
+    this.version,
+    this.releaseDate,
+    this.licenseName,
+    this.licenseUrl,
+    this.contentOwner,
+    this.downloadSizeBytes,
+    this.distributionRightsConfirmed = false,
   });
 
   final String id;
@@ -119,17 +115,29 @@ class Wallpaper {
   final String thumbUrl;
   final String fullUrl;
   final Color accent;
+  final String? sourceUrl;
+  final String? platform;
+  final String? region;
+  final String? version;
+  final DateTime? releaseDate;
+  final String? licenseName;
+  final String? licenseUrl;
+  final String? contentOwner;
+  final int? downloadSizeBytes;
+  final bool distributionRightsConfirmed;
 
   factory Wallpaper.fromJson(Map<String, dynamic> json, int index) {
     final id = '${json['id'] ?? index}';
-    final platformStr = '${json['platform'] ?? json['region'] ?? 'Other'}'
-        .trim();
-    final title = json['title'] as String? ?? 'Wallpaper #$id';
-
-    // Since the original endpoints use these prefixes, we will fallback to them
-    const fallbackThumb = 'https://engfordev.top/gbagame/thumbs/';
-    final thumb = json['thumbnail'] as String? ?? '$fallbackThumb$id.webp';
-    final full = json['download_link'] as String? ?? thumb;
+    final platform = _cleanString(json['platform']);
+    final region = _cleanString(json['region']);
+    final platformStr = platform ?? region ?? 'Other';
+    final title = _cleanString(json['title']) ?? 'Game #$id';
+    final thumb = _cleanString(json['thumbnail']) ?? '';
+    final full = _cleanString(json['download_link']) ??
+        _cleanString(json['downloadUrl']) ??
+        _cleanString(json['url']) ??
+        '';
+    final sizeValue = json['download_size_bytes'] ?? json['downloadSizeBytes'];
 
     return Wallpaper(
       id: id,
@@ -138,7 +146,30 @@ class Wallpaper {
       thumbUrl: thumb,
       fullUrl: full,
       accent: _accentColors[index % _accentColors.length],
+      sourceUrl: _cleanString(json['link']),
+      platform: platform,
+      region: region,
+      version: _cleanString(json['version']),
+      releaseDate: DateTime.tryParse('${json['date'] ?? ''}'),
+      licenseName: _cleanString(json['license']) ?? _cleanString(json['licenseName']),
+      licenseUrl: _cleanString(json['license_url']) ?? _cleanString(json['licenseUrl']),
+      contentOwner: _cleanString(json['content_owner']) ?? _cleanString(json['contentOwner']),
+      downloadSizeBytes: sizeValue is int ? sizeValue : int.tryParse('$sizeValue'),
+      distributionRightsConfirmed: json['distribution_rights_confirmed'] == true ||
+          json['distributionRightsConfirmed'] == true,
     );
+  }
+
+  bool get isPlayableRom {
+    final path = Uri.tryParse(fullUrl)?.path.toLowerCase() ?? fullUrl.toLowerCase();
+    return path.endsWith('.zip') ||
+        path.endsWith('.gba') ||
+        path.endsWith('.gbc') ||
+        path.endsWith('.gb');
+  }
+
+  bool get canDistribute {
+    return isPlayableRom && fullUrl.startsWith('https://');
   }
 
   @override
@@ -150,7 +181,105 @@ class Wallpaper {
   int get hashCode => id.hashCode;
 }
 
-const _dataUrl = 'https://engfordev.top/gbagame/data.json';
+String? _cleanString(Object? value) {
+  final text = '$value'.trim();
+  if (value == null || text.isEmpty || text == 'null') return null;
+  return text
+      .replaceAll('&#8211;', '-')
+      .replaceAll('&amp;', '&')
+      .replaceAll('&#038;', '&')
+      .replaceAll('&quot;', '"')
+      .replaceAll('&#039;', "'");
+}
+
+String _fileExtensionFromUrl(String url, String fallback) {
+  final path = Uri.tryParse(url)?.path ?? url;
+  final lastSegment = path.split('/').last;
+  final dotIndex = lastSegment.lastIndexOf('.');
+  if (dotIndex == -1 || dotIndex == lastSegment.length - 1) return fallback;
+  return lastSegment.substring(dotIndex);
+}
+
+String _formatByteSize(int bytes) {
+  if (bytes <= 0) return '';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  var value = bytes.toDouble();
+  var unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  final precision = value >= 10 || unitIndex == 0 ? 0 : 1;
+  return '${value.toStringAsFixed(precision)} ${units[unitIndex]}';
+}
+
+String _formatDate(DateTime date) {
+  return '${date.year.toString().padLeft(4, '0')}-'
+      '${date.month.toString().padLeft(2, '0')}-'
+      '${date.day.toString().padLeft(2, '0')}';
+}
+
+Future<File> _downloadGameFile(
+  Wallpaper item, {
+  void Function(double progress)? onProgress,
+}) async {
+  final ext = _fileExtensionFromUrl(item.fullUrl, '.zip');
+  final dir = await getApplicationDocumentsDirectory();
+  final file = File('${dir.path}/${item.id}$ext');
+
+  await Dio().download(
+    item.fullUrl,
+    file.path,
+    onReceiveProgress: (received, total) {
+      if (total > 0) onProgress?.call(received / total);
+    },
+  );
+  return file;
+}
+
+Future<bool> _confirmDownload(BuildContext context, Wallpaper item) async {
+  final size = item.downloadSizeBytes == null
+      ? null
+      : _formatByteSize(item.downloadSizeBytes!);
+  final result = await showDialog<bool>(
+    context: context,
+    builder: (context) {
+      return AlertDialog(
+        backgroundColor: const Color(0xFF1C1B1B),
+        title: Text(
+          'Download game?',
+          style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
+        content: Text(
+          [
+            if (size != null) 'Download size: $size',
+            if (item.contentOwner != null) 'Owner: ${item.contentOwner}',
+            if (item.licenseName != null) 'License: ${item.licenseName}',
+            'Only download games you are allowed to use.',
+          ].join('\n'),
+          style: GoogleFonts.outfit(color: Colors.white70, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Download'),
+          ),
+        ],
+      );
+    },
+  );
+  return result == true;
+}
+
+const _dataUrl = String.fromEnvironment(
+  'RETRO_HUB_CATALOG_URL',
+  defaultValue: 'https://engfordev.top/gbagame/data.json',
+);
+const _emulatorJsDataPath = String.fromEnvironment('EMULATOR_JS_DATA_PATH');
 
 const _accentColors = [
   Color(0xFF00E5FF),
@@ -163,60 +292,42 @@ const _accentColors = [
 
 class WallpaperRepository {
   Future<List<Wallpaper>> fetch() async {
+    print('DataUrl: "$_dataUrl"');
+    if (_dataUrl.isEmpty) return [];
     final dio = Dio(
       BaseOptions(
-        connectTimeout: const Duration(seconds: 8),
-        receiveTimeout: const Duration(seconds: 8),
+        connectTimeout: const Duration(seconds: 30),
+        receiveTimeout: const Duration(seconds: 30),
         headers: {
           'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)',
           'Accept': 'application/json',
         },
       ),
     );
-    final response = await dio.get<String>(_dataUrl);
-    final raw = jsonDecode(response.data ?? '[]') as List<dynamic>;
-    return raw
+    final response = await dio.get(_dataUrl);
+    final data = response.data;
+    if (data == null) return [];
+    
+    List<dynamic> raw;
+    if (data is String) {
+      if (data.isEmpty) return [];
+      raw = jsonDecode(data) as List<dynamic>;
+    } else if (data is List) {
+      raw = data;
+    } else {
+      raw = [];
+    }
+    
+    final result = raw
         .whereType<Map<String, dynamic>>()
         .toList()
         .asMap()
         .entries
         .map((entry) => Wallpaper.fromJson(entry.value, entry.key))
+        .where((item) => item.canDistribute)
         .toList();
-  }
-}
-
-class AdIds {
-  static const banner = 'ca-app-pub-3940256099942544/6300978111';
-  static const interstitial = 'ca-app-pub-3940256099942544/1033173712';
-}
-
-class AdConsentService {
-  AdConsentService._();
-  static final instance = AdConsentService._();
-
-  Future<void> prepare() async {
-    if (kIsWeb || (!Platform.isAndroid && !Platform.isIOS)) return;
-    final completer = Completer<void>();
-    ConsentInformation.instance.requestConsentInfoUpdate(
-      ConsentRequestParameters(),
-      () async {
-        await ConsentForm.loadAndShowConsentFormIfRequired((error) {
-          if (!completer.isCompleted) completer.complete();
-        });
-      },
-      (_) {
-        if (!completer.isCompleted) completer.complete();
-      },
-    );
-    await completer.future.timeout(
-      const Duration(seconds: 8),
-      onTimeout: () {},
-    );
-  }
-
-  Future<void> showPrivacyOptions() async {
-    if (kIsWeb || (!Platform.isAndroid && !Platform.isIOS)) return;
-    await ConsentForm.showPrivacyOptionsForm((_) {});
+    print('Fetched ${result.length} items');
+    return result;
   }
 }
 
@@ -224,51 +335,7 @@ class InterstitialAdService {
   InterstitialAdService._();
   static final instance = InterstitialAdService._();
 
-  InterstitialAd? _ad;
-  int _actions = 0;
-  DateTime _lastShown = DateTime.fromMillisecondsSinceEpoch(0);
-
-  Future<void> load() async {
-    if (kIsWeb || (!Platform.isAndroid && !Platform.isIOS)) return;
-    if (!await ConsentInformation.instance.canRequestAds()) return;
-    await InterstitialAd.load(
-      adUnitId: AdIds.interstitial,
-      request: const AdRequest(),
-      adLoadCallback: InterstitialAdLoadCallback(
-        onAdLoaded: (ad) => _ad = ad,
-        onAdFailedToLoad: (_) => _ad = null,
-      ),
-    );
-  }
-
-  void recordAction() {
-    _actions += 1;
-    if (_actions >= 3) {
-      // Show slightly more frequently for commercial app
-      showIfReady();
-    }
-  }
-
-  void showIfReady() {
-    final canShowNow = DateTime.now().difference(_lastShown).inSeconds > 60;
-    if (_ad == null || !canShowNow) return;
-
-    final ad = _ad;
-    _ad = null;
-    _actions = 0;
-    _lastShown = DateTime.now();
-    ad?.fullScreenContentCallback = FullScreenContentCallback(
-      onAdDismissedFullScreenContent: (ad) {
-        ad.dispose();
-        unawaited(load());
-      },
-      onAdFailedToShowFullScreenContent: (ad, _) {
-        ad.dispose();
-        unawaited(load());
-      },
-    );
-    ad?.show();
-  }
+  void recordAction() {}
 }
 
 class GalleryScreen extends StatefulWidget {
@@ -287,7 +354,7 @@ class _GalleryScreenState extends State<GalleryScreen>
   bool _loading = true;
   String? _error;
 
-  static const _all = 'All Games';
+  static const _all = 'All Licensed Games';
   String _activeCategory = _all;
   List<String> _categories = [];
 
@@ -359,7 +426,8 @@ class _GalleryScreenState extends State<GalleryScreen>
         _loading = false;
         _animController.forward();
       });
-    } catch (_) {
+    } catch (e, st) {
+      print('Fetch Error: $e\n$st');
       if (!mounted) return;
       setState(() {
         _loading = false;
@@ -376,131 +444,227 @@ class _GalleryScreenState extends State<GalleryScreen>
       controller: _scrollController,
       physics: const BouncingScrollPhysics(),
       slivers: [
-            SliverAppBar(
-              toolbarHeight: 64,
-              pinned: true,
-              elevation: 0,
-              backgroundColor: const Color(0xFF131313),
-              surfaceTintColor: Colors.transparent,
-              titleSpacing: 16,
-              title: Row(
-                children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF7C3AED),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0x55D2BBFF)),
-                    ),
-                    child: const Icon(
-                      Icons.sports_esports_rounded,
-                      color: Color(0xFFD2BBFF),
-                      size: 22,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    'RETRO HUB',
-                    style: GoogleFonts.spaceGrotesk(
-                      color: const Color(0xFFD2BBFF),
-                      fontSize: 24,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ],
-              ),
-              actions: [
-                IconButton(
-                  onPressed: () {
-                    showSearch(
-                      context: context,
-                      delegate: GameSearchDelegate(_allItems),
-                    );
-                  },
-                  icon: const Icon(
-                    Icons.search_rounded,
-                    color: Color(0xFFD2BBFF),
-                    size: 22,
-                  ),
-                ),
-                const SizedBox(width: 8),
-              ],
-              bottom: PreferredSize(
-                preferredSize: const Size.fromHeight(1),
-                child: Container(height: 1, color: const Color(0xFF4A4455)),
-              ),
+        SliverAppBar(
+          toolbarHeight: 70,
+          pinned: true,
+          elevation: 0,
+          backgroundColor: Theme.of(context).colorScheme.surface.withOpacity(0.85),
+          surfaceTintColor: Colors.transparent,
+          flexibleSpace: ClipRRect(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+              child: Container(color: Colors.transparent),
             ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildRetroHero(featured),
-                    const SizedBox(height: 24),
-                    _buildCategoryGrid(),
-                    const SizedBox(height: 24),
-                    _buildTrendingSection(trending),
-                    const SizedBox(height: 32),
-                    Text(
-                      'All Games',
-                      style: GoogleFonts.spaceGrotesk(
-                        color: const Color(0xFFE5E2E1),
-                        fontSize: 24,
-                        fontWeight: FontWeight.w800,
-                        height: 1,
-                      ),
-                    ),
+          ),
+          titleSpacing: 16,
+          title: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF9D4EDD), Color(0xFF5A189A)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(color: const Color(0xFF9D4EDD).withOpacity(0.4), blurRadius: 10, offset: const Offset(0, 4)),
                   ],
                 ),
+                child: const Icon(
+                  Icons.sports_esports_rounded,
+                  color: Colors.white,
+                  size: 26,
+                ),
               ),
-            ),
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
-              sliver: SliverGrid(
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  childAspectRatio: 0.75,
-                  crossAxisSpacing: 16,
-                  mainAxisSpacing: 16,
+              const SizedBox(width: 14),
+              Text(
+                'Retro Hub',
+                style: GoogleFonts.outfit(
+                  color: Colors.white,
+                  fontSize: 26,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: -0.5,
                 ),
-                delegate: SliverChildBuilderDelegate(
-                  (context, index) {
-                    if (index == _items.length) {
-                      return Padding(
-                        padding: const EdgeInsets.only(top: 16),
-                        child: FilledButton(
-                          onPressed: () {
-                            setState(() {
-                              _visibleCount += _batchSize;
-                              _applyFilters();
-                            });
-                          },
-                          style: FilledButton.styleFrom(
-                            backgroundColor: const Color(0xFFD2BBFF),
-                            foregroundColor: const Color(0xFF3F008E),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                          child: const Text(
-                            'Load More',
-                            style: TextStyle(fontWeight: FontWeight.w900),
-                          ),
-                        ),
-                      );
-                    }
-                    return _buildItemCard(_items[index], index);
-                  },
-                  childCount: _items.length < _allItems.length ? _items.length + 1 : _items.length,
-                ),
+              ),
+            ],
+          ),
+          actions: [
+            Container(
+              margin: const EdgeInsets.only(right: 16),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.05),
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white.withOpacity(0.1)),
+              ),
+              child: IconButton(
+                onPressed: () {
+                  showSearch(context: context, delegate: GameSearchDelegate(_allItems));
+                },
+                icon: const Icon(Icons.search_rounded, color: Colors.white, size: 24),
               ),
             ),
           ],
-        );
+        ),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (featured != null) ...[
+                  Text(
+                    'Featured',
+                    style: GoogleFonts.outfit(
+                      color: Colors.white,
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  _buildRetroHero(featured),
+                  const SizedBox(height: 32),
+                ],
+                Text(
+                  'Categories',
+                  style: GoogleFonts.outfit(
+                    color: Colors.white,
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  height: 40,
+                  child: ListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: _categories.length,
+                    itemBuilder: (context, index) {
+                      final cat = _categories[index];
+                      final active = cat == _activeCategory;
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 12),
+                        child: GestureDetector(
+                          onTap: () {
+                            setState(() {
+                              _activeCategory = cat;
+                              _visibleCount = _batchSize;
+                              _applyFilters();
+                            });
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 0),
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              gradient: active
+                                  ? const LinearGradient(colors: [Color(0xFF9D4EDD), Color(0xFF5A189A)])
+                                  : null,
+                              color: active ? null : Colors.white.withOpacity(0.05),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: active ? Colors.transparent : Colors.white.withOpacity(0.1),
+                              ),
+                              boxShadow: active
+                                  ? [BoxShadow(color: const Color(0xFF9D4EDD).withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 4))]
+                                  : [],
+                            ),
+                            child: Text(
+                              cat,
+                              style: GoogleFonts.outfit(
+                                color: active ? Colors.white : Colors.white70,
+                                fontSize: 14,
+                                fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 32),
+                Text(
+                  'Explore Games',
+                  style: GoogleFonts.outfit(
+                    color: Colors.white,
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
+          sliver: SliverGrid(
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              childAspectRatio: 0.72,
+              crossAxisSpacing: 16,
+              mainAxisSpacing: 16,
+            ),
+            delegate: SliverChildBuilderDelegate(
+              (context, index) {
+                if (index == _items.length) {
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 16),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(20),
+                        gradient: LinearGradient(
+                          colors: [Colors.white.withOpacity(0.05), Colors.white.withOpacity(0.02)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        border: Border.all(color: Colors.white.withOpacity(0.1)),
+                      ),
+                      child: InkWell(
+                        onTap: () {
+                          setState(() {
+                            _visibleCount += _batchSize;
+                            _applyFilters();
+                          });
+                        },
+                        borderRadius: BorderRadius.circular(20),
+                        child: Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF9D4EDD).withOpacity(0.2),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(Icons.arrow_downward_rounded, color: Color(0xFFD2BBFF)),
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                'Load More',
+                                style: GoogleFonts.outfit(
+                                  color: const Color(0xFFD2BBFF),
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }
+                return _buildItemCard(_items[index], index);
+              },
+              childCount: _items.length < _allItems.length ? _items.length + 1 : _items.length,
+            ),
+          ),
+        ),
+      ],
+    );
   }
-
 
   Widget _buildLibraryView() {
     final favoritesList = _favorites.toList();
@@ -589,7 +753,7 @@ class _GalleryScreenState extends State<GalleryScreen>
           ),
           Expanded(
             child: favoritesList.isEmpty
-                ? const Center(child: Text('No ROMs saved yet.', style: TextStyle(color: Colors.white54)))
+                ? const Center(child: Text('No licensed games saved yet.', style: TextStyle(color: Colors.white54)))
                 : GridView.builder(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
                     gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -676,19 +840,18 @@ class _GalleryScreenState extends State<GalleryScreen>
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'Connect with other retro gamers. Share high scores, discuss ROM hacks, and stay updated on the latest drops.',
+                  'Connect with other retro players. Share scores, discuss homebrew projects, and follow licensed releases.',
                   style: GoogleFonts.outfit(color: Colors.white70, fontSize: 14),
                 ),
                 const SizedBox(height: 16),
                 FilledButton(
                   onPressed: () async {
+                    final messenger = ScaffoldMessenger.of(context);
                     final Uri url = Uri.parse('https://discord.gg/vSh2kmcR');
                     if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Could not launch Discord link.')),
-                        );
-                      }
+                      messenger.showSnackBar(
+                        const SnackBar(content: Text('Could not launch Discord link.')),
+                      );
                     }
                   },
                   style: FilledButton.styleFrom(
@@ -714,11 +877,11 @@ class _GalleryScreenState extends State<GalleryScreen>
             ),
           ),
           const SizedBox(height: 16),
-          _buildPostCard('RetroGamer99', 'Just beat Chrono Trigger for the 5th time! Still a masterpiece. Any recommendations for similar RPGs?', '2h ago', 12, 4),
+          _buildPostCard('HomebrewDev', 'Testing a new public-domain platformer build tonight. Feedback on controls is welcome.', '2h ago', 12, 4),
           const SizedBox(height: 12),
-          _buildPostCard('PokemonMaster', 'Does anyone know how to get the Mystery Gift to work in Crystal version on this emulator?', '5h ago', 4, 1),
+          _buildPostCard('PixelRunner', 'Looking for licensed chiptune packs for a tiny arcade project.', '5h ago', 4, 1),
           const SizedBox(height: 12),
-          _buildPostCard('SpeedRunGuy', 'New personal best on Super Mario Bros 3: 11m 42s! So close to WR!', '1d ago', 45, 8),
+          _buildPostCard('SpeedRunGuy', 'New personal best on an open homebrew runner: 11m 42s.', '1d ago', 45, 8),
         ],
       ),
     );
@@ -736,7 +899,7 @@ class _GalleryScreenState extends State<GalleryScreen>
             Row(
               children: [
                 CircleAvatar(
-                  backgroundColor: const Color(0xFF7C3AED).withOpacity(0.3),
+                  backgroundColor: const Color(0xFF7C3AED).withValues(alpha: 0.3),
                   child: Text(author[0].toUpperCase(), style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF7C3AED))),
                 ),
                 const SizedBox(width: 12),
@@ -865,8 +1028,8 @@ class _GalleryScreenState extends State<GalleryScreen>
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                     colors: [
-                      Colors.black.withOpacity(0.05),
-                      Colors.black.withOpacity(0.35),
+                      Colors.black.withValues(alpha: 0.05),
+                      Colors.black.withValues(alpha: 0.35),
                       const Color(0xFF131313),
                     ],
                     stops: const [0, 0.52, 1],
@@ -943,7 +1106,7 @@ class _GalleryScreenState extends State<GalleryScreen>
                           ),
                           icon: const Icon(Icons.play_arrow_rounded, size: 20),
                           label: const Text(
-                            'PLAY NOW',
+                            'DETAILS',
                             style: TextStyle(fontWeight: FontWeight.w900),
                           ),
                         ),
@@ -1010,7 +1173,7 @@ class _GalleryScreenState extends State<GalleryScreen>
           children: [
             Expanded(
               child: _CategoryTile(
-                title: 'Most\nDownloaded',
+                title: 'Ready\nTo Play',
                 subtitle: 'Community\nfavorites',
                 icon: Icons.trending_up_rounded,
                 onTap: () => _selectCategory(_all),
@@ -1059,7 +1222,7 @@ class _GalleryScreenState extends State<GalleryScreen>
             Container(width: 4, height: 32, color: const Color(0xFFD2BBFF)),
             const SizedBox(width: 12),
             Text(
-              'Trending ROMs',
+              'Licensed Picks',
               style: GoogleFonts.spaceGrotesk(
                 color: const Color(0xFFE5E2E1),
                 fontSize: 24,
@@ -1107,9 +1270,11 @@ class _GalleryScreenState extends State<GalleryScreen>
 
 
   Widget _buildItemCard(Wallpaper item, int index) {
-    final rand = math.Random(item.id.hashCode);
-    final rating = (4.0 + rand.nextDouble() * 0.9).toStringAsFixed(1);
-    final fps = rand.nextBool() ? '60 FPS' : '30 FPS';
+    final meta = [
+      item.platform ?? item.category,
+      if (item.region != null) item.region!,
+      if (item.version != null) 'v${item.version}',
+    ].join(' • ');
 
     return GestureDetector(
       onTap: () {
@@ -1134,55 +1299,76 @@ class _GalleryScreenState extends State<GalleryScreen>
       },
       child: Container(
         decoration: BoxDecoration(
-          color: const Color(0xFF1E1E1E),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFF3A3939)),
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: item.accent.withOpacity(0.15),
+              blurRadius: 15,
+              offset: const Offset(0, 8),
+            ),
+          ],
         ),
-        clipBehavior: Clip.antiAlias,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              flex: 4,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  CachedNetworkImage(
-                    imageUrl: item.thumbUrl,
-                    fit: BoxFit.cover,
-                    placeholder: (_, _) => Container(color: const Color(0xFF2A2A2A)),
-                    errorWidget: (_, _, _) => Container(color: const Color(0xFF2A2A2A)),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              CachedNetworkImage(
+                imageUrl: item.thumbUrl,
+                fit: BoxFit.cover,
+                placeholder: (_, __) => Container(color: const Color(0xFF1A1A1A)),
+                errorWidget: (_, __, ___) => Container(color: const Color(0xFF1A1A1A)),
+              ),
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.transparent,
+                        Colors.black.withOpacity(0.4),
+                        Colors.black.withOpacity(0.95),
+                      ],
+                      stops: const [0.4, 0.7, 1.0],
+                    ),
                   ),
-                  Positioned(
-                    top: 8,
-                    right: 8,
+                ),
+              ),
+              Positioned(
+                top: 10,
+                right: 10,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(30),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.7),
-                        borderRadius: BorderRadius.circular(4),
-                        border: Border.all(color: const Color(0xFF73DB9A)),
+                        color: Colors.white.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(30),
+                        border: Border.all(color: Colors.white.withOpacity(0.2)),
                       ),
                       child: Text(
                         item.category.toUpperCase(),
-                        style: GoogleFonts.jetBrainsMono(
-                          color: const Color(0xFF73DB9A),
-                          fontSize: 8,
-                          fontWeight: FontWeight.bold,
+                        style: GoogleFonts.outfit(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1,
                         ),
                       ),
                     ),
                   ),
-                ],
+                ),
               ),
-            ),
-            Expanded(
-              flex: 3,
-              child: Padding(
-                padding: const EdgeInsets.all(12),
+              Positioned(
+                bottom: 12,
+                left: 12,
+                right: 12,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
                       item.title,
@@ -1190,41 +1376,27 @@ class _GalleryScreenState extends State<GalleryScreen>
                       overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.outfit(
                         color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                        height: 1.2,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        height: 1.1,
                       ),
                     ),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          fps,
-                          style: GoogleFonts.jetBrainsMono(
-                            color: const Color(0xFFCCC3D8),
-                            fontSize: 10,
-                          ),
-                        ),
-                        Row(
-                          children: [
-                            const Icon(Icons.star_outline, color: Color(0xFFF97316), size: 12),
-                            const SizedBox(width: 4),
-                            Text(
-                              rating,
-                              style: GoogleFonts.jetBrainsMono(
-                                color: const Color(0xFFCCC3D8),
-                                fontSize: 10,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
+                    const SizedBox(height: 6),
+                    Text(
+                      meta,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.jetBrainsMono(
+                        color: item.accent.withOpacity(0.8),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ],
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -1384,52 +1556,27 @@ class _TrendingRomRowState extends State<_TrendingRomRow> {
   double _downloadProgress = 0.0;
 
   Future<void> _download() async {
-    if (_isDownloading) return;
+    if (_isDownloading || !widget.item.canDistribute) return;
+    final accepted = await _confirmDownload(context, widget.item);
+    if (!accepted || !mounted) return;
     setState(() {
       _isDownloading = true;
       _downloadProgress = 0.0;
     });
 
     try {
-      final downloadUrl = widget.item.fullUrl;
-      final lowerUrl = downloadUrl.toLowerCase();
-      final isImage = lowerUrl.endsWith('.jpg') || lowerUrl.endsWith('.jpeg') || lowerUrl.endsWith('.png') || lowerUrl.endsWith('.webp');
-      
-      final ext = downloadUrl.contains('.') ? '.${downloadUrl.split('.').last}' : (isImage ? '.jpg' : '.zip');
-      
-      final temp = await getTemporaryDirectory();
-      final file = File('${temp.path}/${widget.item.id}$ext');
-
-      await Dio().download(
-        downloadUrl, 
-        file.path,
-        onReceiveProgress: (received, total) {
-          if (total != -1 && mounted) {
-            setState(() {
-              _downloadProgress = received / total;
-            });
-          }
+      final file = await _downloadGameFile(
+        widget.item,
+        onProgress: (progress) {
+          if (mounted) setState(() => _downloadProgress = progress);
         },
       );
 
-      if (!isImage) {
-        await Share.shareXFiles([XFile(file.path)], text: 'Save your ROM');
-      } else {
-        final bytes = await file.readAsBytes();
-        await Gal.putImageBytes(
-          bytes,
-          name: widget.item.id,
-          album: 'Retro Hub',
-        );
-      }
-
       InterstitialAdService.instance.recordAction();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(!isImage ? 'Ready to save/share!' : 'Saved to Gallery! 🎉'),
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: const Color(0xFF1E2630),
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => EmulatorScreen(game: widget.item, romPath: file.path),
         ),
       );
     } catch (_) {
@@ -1452,7 +1599,6 @@ class _TrendingRomRowState extends State<_TrendingRomRow> {
 
   @override
   Widget build(BuildContext context) {
-    final displayProgress = _isDownloading ? _downloadProgress : widget.progress;
     final progressColor = _isDownloading ? const Color(0xFFD2BBFF) : const Color(0xFF73DB9A);
 
     return InkWell(
@@ -1529,7 +1675,7 @@ class _TrendingRomRowState extends State<_TrendingRomRow> {
                       Text(
                         _isDownloading 
                             ? '${(_downloadProgress * 100).round()}%\nDOWNLOADING' 
-                            : '${(widget.progress * 100).round()}%\nCOMPATIBLE',
+                            : 'GAME',
                         style: GoogleFonts.jetBrainsMono(
                           color: progressColor,
                           fontSize: 10,
@@ -1542,7 +1688,11 @@ class _TrendingRomRowState extends State<_TrendingRomRow> {
                   ),
                   const SizedBox(height: 7),
                   Text(
-                    '${widget.item.category.toUpperCase()}  -  ${widget.item.fullUrl.toLowerCase().endsWith('.zip') ? 'ROM' : '8MB'}',
+                    [
+                      widget.item.platform ?? widget.item.category,
+                      if (widget.item.region != null) widget.item.region!,
+                      if (widget.item.version != null) 'v${widget.item.version}',
+                    ].join('  -  ').toUpperCase(),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: GoogleFonts.jetBrainsMono(
@@ -1552,20 +1702,20 @@ class _TrendingRomRowState extends State<_TrendingRomRow> {
                       letterSpacing: 1.1,
                     ),
                   ),
-                  const SizedBox(height: 7),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: LinearProgressIndicator(
-                      value: displayProgress,
-                      minHeight: 4,
-                      backgroundColor: const Color(0xFF353534),
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        displayProgress >= 1
-                            ? const Color(0xFF73DB9A)
-                            : progressColor,
+                  if (_isDownloading) ...[
+                    const SizedBox(height: 7),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: LinearProgressIndicator(
+                        value: _downloadProgress,
+                        minHeight: 4,
+                        backgroundColor: const Color(0xFF353534),
+                        valueColor: const AlwaysStoppedAnimation<Color>(
+                          Color(0xFFD2BBFF),
+                        ),
                       ),
                     ),
-                  ),
+                  ],
                 ],
               ),
             ),
@@ -1602,33 +1752,6 @@ class _TrendingRomRowState extends State<_TrendingRomRow> {
   }
 }
 
-class _HashTag extends StatelessWidget {
-  const _HashTag({required this.label, required this.color});
-
-  final String label;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 5),
-      decoration: BoxDecoration(
-        color: const Color(0xFF2A2A2A),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFF4A4455)),
-      ),
-      child: Text(
-        label,
-        style: GoogleFonts.jetBrainsMono(
-          color: color,
-          fontSize: 10,
-          height: 1.5,
-        ),
-      ),
-    );
-  }
-}
-
 class _RetroBottomNav extends StatelessWidget {
   const _RetroBottomNav({
     required this.currentIndex,
@@ -1655,7 +1778,7 @@ class _RetroBottomNav extends StatelessWidget {
             border: const Border(top: BorderSide(color: Color(0xFF4A4455))),
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFF73DB9A).withOpacity(0.08),
+                color: const Color(0xFF73DB9A).withValues(alpha: 0.08),
                 blurRadius: 12,
                 offset: const Offset(0, -4),
               ),
@@ -1758,85 +1881,91 @@ class DetailScreen extends StatefulWidget {
     required this.wallpaper,
     required this.isFavorite,
     required this.onFavorite,
+    this.allItems = const [],
   });
 
   final Wallpaper wallpaper;
   final bool isFavorite;
   final VoidCallback onFavorite;
+  final List<Wallpaper> allItems;
 
   @override
   State<DetailScreen> createState() => _DetailScreenState();
 }
 
 class _DetailScreenState extends State<DetailScreen> {
-  bool _isDownloading = false;
-  double _downloadProgress = 0.0;
+  String? _fileSizeLabel;
 
-  Future<void> _download() async {
-    if (_isDownloading) return;
-    setState(() {
-      _isDownloading = true;
-      _downloadProgress = 0.0;
-    });
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadFileSize());
+  }
 
+  Future<void> _loadFileSize() async {
+    if (!widget.wallpaper.isPlayableRom) return;
+    if (widget.wallpaper.downloadSizeBytes != null &&
+        widget.wallpaper.downloadSizeBytes! > 0) {
+      setState(() => _fileSizeLabel = _formatByteSize(widget.wallpaper.downloadSizeBytes!));
+      return;
+    }
+  }
+
+  Future<void> _joinDiscord() async {
+    final url = Uri.parse('https://discord.com');
+    if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open Discord link')),
+      );
+    }
+  }
+
+  Future<void> _importGame() async {
     try {
-      final downloadUrl = widget.wallpaper.fullUrl;
-      final lowerUrl = downloadUrl.toLowerCase();
-      final isImage = lowerUrl.endsWith('.jpg') || lowerUrl.endsWith('.jpeg') || lowerUrl.endsWith('.png') || lowerUrl.endsWith('.webp');
-      
-      final ext = downloadUrl.contains('.') ? '.${downloadUrl.split('.').last}' : (isImage ? '.jpg' : '.zip');
-      
-      final temp = await getTemporaryDirectory();
-      final file = File('${temp.path}/${widget.wallpaper.id}$ext');
-
-      await Dio().download(
-        downloadUrl, 
-        file.path,
-        onReceiveProgress: (received, total) {
-          if (total != -1 && mounted) {
-            setState(() {
-              _downloadProgress = received / total;
-            });
-          }
-        },
+      final result = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['gba', 'zip', 'gbc', 'gb'],
       );
-
-      if (!isImage) {
-        await Share.shareXFiles([XFile(file.path)], text: 'Save your ROM');
-      } else {
-        final bytes = await file.readAsBytes();
-        await Gal.putImageBytes(bytes, name: widget.wallpaper.id, album: 'Retro Hub');
+      if (result != null && result.files.single.path != null) {
+        if (!mounted) return;
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => EmulatorScreen(
+              game: widget.wallpaper,
+              romPath: result.files.single.path,
+            ),
+          ),
+        );
       }
-
-      InterstitialAdService.instance.recordAction();
+    } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(!isImage ? 'Ready to save/share!' : 'Saved to Gallery! 🎉'),
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: const Color(0xFF1E2630),
-        ),
+        SnackBar(content: Text('Error selecting file: $e')),
       );
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Download failed. Please try again.'),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isDownloading = false;
-          _downloadProgress = 0.0;
-        });
-      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final infoRows = <MapEntry<String, String>>[
+      if (widget.wallpaper.platform != null) MapEntry('Platform', widget.wallpaper.platform!),
+      if (widget.wallpaper.region != null) MapEntry('Region', widget.wallpaper.region!),
+      if (widget.wallpaper.version != null) MapEntry('Version', widget.wallpaper.version!),
+      if (widget.wallpaper.releaseDate != null)
+        MapEntry('Release date', _formatDate(widget.wallpaper.releaseDate!)),
+      if (_fileSizeLabel != null) MapEntry('Download size', _fileSizeLabel!),
+      if (widget.wallpaper.sourceUrl != null) MapEntry('Source', Uri.tryParse(widget.wallpaper.sourceUrl!)?.host ?? widget.wallpaper.sourceUrl!),
+    ];
+    final statBoxes = <Widget>[
+      if (_fileSizeLabel != null)
+        _buildStatBox(Icons.sd_storage, const Color(0xFFD2BBFF), _fileSizeLabel!, 'SIZE'),
+      if (widget.wallpaper.version != null)
+        _buildStatBox(Icons.info_outline, const Color(0xFF73DB9A), 'v${widget.wallpaper.version}', 'VERSION'),
+      if (widget.wallpaper.region != null)
+        _buildStatBox(Icons.public, const Color(0xFFD2BBFF), widget.wallpaper.region!, 'REGION'),
+    ];
+
     return Scaffold(
       backgroundColor: const Color(0xFF131313),
       body: SingleChildScrollView(
@@ -1860,7 +1989,7 @@ class _DetailScreenState extends State<DetailScreen> {
                     height: 350,
                     width: double.infinity,
                     fit: BoxFit.cover,
-                    errorWidget: (_, __, ___) => Container(height: 350, color: const Color(0xFF2A2A2A)),
+                    errorWidget: (context, error, stackTrace) => Container(height: 350, color: const Color(0xFF2A2A2A)),
                   ),
                 ),
                 SafeArea(
@@ -1881,20 +2010,7 @@ class _DetailScreenState extends State<DetailScreen> {
                             fontWeight: FontWeight.w900,
                           ),
                         ),
-                        Row(
-                          children: [
-                            const Icon(Icons.search, color: Color(0xFFD2BBFF)),
-                            const SizedBox(width: 12),
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: Container(
-                                width: 28, height: 28,
-                                color: const Color(0xFF3F008E),
-                                child: const Icon(Icons.person, color: Colors.white, size: 16),
-                              ),
-                            ),
-                          ],
-                        ),
+                        const SizedBox(width: 48),
                       ],
                     ),
                   ),
@@ -1909,8 +2025,8 @@ class _DetailScreenState extends State<DetailScreen> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color: Colors.green.withOpacity(0.1),
-                          border: Border.all(color: Colors.green.withOpacity(0.5)),
+                          color: Colors.green.withValues(alpha: 0.1),
+                          border: Border.all(color: Colors.green.withValues(alpha: 0.5)),
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
@@ -1944,86 +2060,52 @@ class _DetailScreenState extends State<DetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Row(
-                    children: [
-                      Expanded(child: _buildStatBox(Icons.star, Colors.green, '4.9', 'RATING')),
-                      const SizedBox(width: 12),
-                      Expanded(child: _buildStatBox(Icons.download, const Color(0xFFD2BBFF), '2.4M', 'SAVES')),
-                      const SizedBox(width: 12),
-                      Expanded(child: _buildStatBox(Icons.sd_storage, const Color(0xFFD2BBFF), '16MB', 'SIZE')),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
+                  if (statBoxes.isNotEmpty) ...[
+                    _buildStatRow(statBoxes),
+                    const SizedBox(height: 24),
+                  ],
                   ElevatedButton.icon(
-                    onPressed: () {
-                      Navigator.push(context, MaterialPageRoute(builder: (_) => EmulatorScreen(game: widget.wallpaper)));
-                    },
-                    icon: const Icon(Icons.play_arrow, color: Colors.white),
-                    label: const Text('PLAY NOW', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                    onPressed: _joinDiscord,
+                    icon: const Icon(Icons.discord, color: Colors.white),
+                    label: const Text('JOIN DISCORD COMMUNITY', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF8B5CF6),
+                      backgroundColor: const Color(0xFF5865F2), // Discord Blurple
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
                   ),
                   const SizedBox(height: 12),
                   OutlinedButton.icon(
-                    onPressed: _download,
-                    icon: _isDownloading 
-                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.green))
-                        : const Icon(Icons.cloud_download_outlined, color: Colors.green),
-                    label: Text(
-                      _isDownloading ? 'DOWNLOADING ${(_downloadProgress * 100).toInt()}%' : 'DOWNLOAD ROM',
-                      style: const TextStyle(color: Colors.green, fontSize: 14, fontWeight: FontWeight.bold)
-                    ),
+                    onPressed: _importGame,
+                    icon: const Icon(Icons.file_upload_outlined, color: Color(0xFF73DB9A)),
+                    label: const Text('IMPORT & PLAY LOCAL ROM', style: TextStyle(color: Color(0xFF73DB9A), fontSize: 14, fontWeight: FontWeight.bold)),
                     style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: Colors.green),
+                      side: const BorderSide(color: Color(0xFF73DB9A)),
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
                   ),
-                  const SizedBox(height: 32),
-                  Text('SYSTEM INTEL', style: GoogleFonts.jetBrainsMono(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1E1E1E),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFF333333)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Battle through the region with new expanded features. Navigate the clash to awaken legendary allies. Experience the ultimate RPG odyssey with enhanced challenges and seamless compatibility.',
-                          style: GoogleFonts.outfit(color: Colors.white70, fontSize: 14, height: 1.5),
-                        ),
-                        const SizedBox(height: 16),
-                        Row(
-                          children: [
-                            _buildTag('RPG'),
-                            const SizedBox(width: 8),
-                            _buildTag('COLLECTOR'),
-                            const SizedBox(width: 8),
-                            _buildTag('TURN-BASED'),
+                  if (infoRows.isNotEmpty) ...[
+                    const SizedBox(height: 32),
+                    Text('SYSTEM INTEL', style: GoogleFonts.jetBrainsMono(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1E1E1E),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFF333333)),
+                      ),
+                      child: Column(
+                        children: [
+                          for (var i = 0; i < infoRows.length; i++) ...[
+                            _buildInfoRow(infoRows[i].key, infoRows[i].value),
+                            if (i != infoRows.length - 1) const Divider(color: Color(0xFF333333), height: 18),
                           ],
-                        )
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 32),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('COMMUNITY FEEDBACK', style: GoogleFonts.jetBrainsMono(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
-                      Text('View All', style: GoogleFonts.outfit(color: const Color(0xFFD2BBFF), fontSize: 12)),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  _buildReviewCard('AceTrainer_92', 'The definitive experience. Emulator runs smooth as silk on Retro Hub at 60fps with zero input lag.'),
-                  const SizedBox(height: 12),
-                  _buildReviewCard('PixelQueen', 'Best version of the games. Battle Frontier is still a masterclass in endgame design.'),
+                  ],
                 ],
               ),
             ),
@@ -2058,281 +2140,251 @@ class _DetailScreenState extends State<DetailScreen> {
     );
   }
 
-  Widget _buildTag(String text) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: const Color(0xFF333333),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Text(text, style: GoogleFonts.jetBrainsMono(color: Colors.white54, fontSize: 10)),
+  Widget _buildStatRow(List<Widget> statBoxes) {
+    return Row(
+      children: [
+        for (var i = 0; i < statBoxes.length; i++) ...[
+          Expanded(child: statBoxes[i]),
+          if (i != statBoxes.length - 1) const SizedBox(width: 12),
+        ],
+      ],
     );
   }
 
-  Widget _buildReviewCard(String user, String text) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1C1B1B),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFF333333)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const CircleAvatar(
-                radius: 12,
-                backgroundColor: Color(0xFF3F008E),
-                child: Icon(Icons.person, size: 14, color: Colors.white),
-              ),
-              const SizedBox(width: 8),
-              Text(user, style: GoogleFonts.jetBrainsMono(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
-              const Spacer(),
-              const Row(
-                children: [
-                  Icon(Icons.star, color: Colors.green, size: 12),
-                  Icon(Icons.star, color: Colors.green, size: 12),
-                  Icon(Icons.star, color: Colors.green, size: 12),
-                  Icon(Icons.star, color: Colors.green, size: 12),
-                  Icon(Icons.star, color: Colors.green, size: 12),
-                ],
-              )
-            ],
+  Widget _buildInfoRow(String label, String value) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 112,
+          child: Text(
+            label.toUpperCase(),
+            style: GoogleFonts.jetBrainsMono(
+              color: Colors.white54,
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+            ),
           ),
-          const SizedBox(height: 12),
-          Text(text, style: GoogleFonts.outfit(color: Colors.white70, fontSize: 13, height: 1.4)),
-        ],
-      ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            value,
+            textAlign: TextAlign.right,
+            style: GoogleFonts.outfit(color: Colors.white70, fontSize: 14, height: 1.3),
+          ),
+        ),
+      ],
     );
   }
 }
 
 class EmulatorScreen extends StatefulWidget {
+  const EmulatorScreen({super.key, required this.game, this.romPath});
+
   final Wallpaper game;
-  const EmulatorScreen({super.key, required this.game});
+  final String? romPath;
 
   @override
   State<EmulatorScreen> createState() => _EmulatorScreenState();
 }
 
 class _EmulatorScreenState extends State<EmulatorScreen> {
+  late final WebViewController _controller;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setBackgroundColor(Colors.black)
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onPageFinished: (_) {
+            if (mounted) setState(() => _loading = false);
+          },
+          onWebResourceError: (_) {
+            if (mounted) setState(() => _loading = false);
+          },
+        ),
+      )
+      ..loadHtmlString(_emulatorHtml());
+  }
+
+  String _emulatorHtml() {
+    final gameUrl = widget.game.fullUrl;
+    final title = widget.game.title;
+    if (_emulatorJsDataPath.isEmpty) {
+      return '''
+<!doctype html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+      background: #0D0518;
+      color: #9D4EDD;
+      font-family: sans-serif;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      padding: 24px;
+      box-sizing: border-box;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h3>Emulator runtime is not bundled.</h3>
+  </main>
+</body>
+</html>
+''';
+    }
+    return '''
+<!doctype html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <style>
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      background: linear-gradient(135deg, #0D0518 0%, #1A0B2E 100%);
+      overflow: hidden;
+      touch-action: none;
+      font-family: 'Courier New', Courier, monospace;
+    }
+    #game-container {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      position: relative;
+    }
+    #game {
+      width: 100%;
+      height: 100%;
+      box-shadow: 0 0 30px rgba(157, 78, 221, 0.4);
+    }
+    .crt-overlay {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+      background-size: 100% 4px, 6px 100%;
+      pointer-events: none;
+      z-index: 999;
+      opacity: 0.15;
+    }
+  </style>
+</head>
+<body>
+  <div id="game-container">
+    <div id="game"></div>
+    <div class="crt-overlay"></div>
+  </div>
+  <script>
+    window.EJS_player = '#game';
+    window.EJS_core = 'gba';
+    window.EJS_gameName = ${jsonEncode(title)};
+    window.EJS_gameUrl = ${jsonEncode(gameUrl)};
+    window.EJS_pathtodata = ${jsonEncode(_emulatorJsDataPath)};
+    window.EJS_startOnLoaded = true;
+    window.EJS_theme = 'dark';
+    window.EJS_color = '#9D4EDD';
+    window.EJS_Buttons = {
+      playPause: true,
+      restart: true,
+      mute: true,
+      settings: true,
+      fullscreen: true,
+      saveState: true,
+      loadState: true
+    };
+  </script>
+  <script src="${_emulatorJsDataPath}loader.js"></script>
+</body>
+</html>
+''';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF131313),
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Text(
-          'RETRO HUB',
-          style: GoogleFonts.spaceGrotesk(
-            color: const Color(0xFFD2BBFF),
-            fontSize: 20,
-            fontWeight: FontWeight.w900,
+      backgroundColor: const Color(0xFF0D0518),
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: SafeArea(
+              bottom: false,
+              child: WebViewWidget(controller: _controller),
+            ),
           ),
-        ),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 16.0),
-            child: Center(
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(8),
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 16,
+            left: 16,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
                 child: Container(
-                  width: 32, height: 32,
-                  color: const Color(0xFF3F008E),
-                  child: const Icon(Icons.person, color: Colors.white, size: 18),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.4),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.white.withOpacity(0.1)),
+                  ),
+                  child: IconButton(
+                    icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
+                    onPressed: () => Navigator.pop(context),
+                  ),
                 ),
               ),
             ),
-          )
-        ],
-      ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            const SizedBox(height: 16),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  _buildTriggerBtn('L-TRIGGER'),
-                  _buildTriggerBtn('R-TRIGGER'),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            // Game screen
-            Container(
-              margin: const EdgeInsets.symmetric(horizontal: 16),
-              height: 240,
-              decoration: BoxDecoration(
-                color: Colors.black,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: const Color(0xFF73DB9A), width: 2),
-                image: DecorationImage(
-                  image: CachedNetworkImageProvider(widget.game.thumbUrl),
-                  fit: BoxFit.cover,
-                  colorFilter: ColorFilter.mode(Colors.black.withOpacity(0.2), BlendMode.darken),
-                )
-              ),
-              child: Stack(
-                children: [
-                  Positioned(
-                    top: 12,
-                    right: 12,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.6),
-                        border: Border.all(color: const Color(0xFF73DB9A)),
-                        borderRadius: BorderRadius.circular(4),
+          ),
+          if (_loading)
+            Positioned.fill(
+              child: Container(
+                color: const Color(0xFF0D0518),
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(24),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: const Color(0xFF9D4EDD).withOpacity(0.1),
+                          boxShadow: [
+                            BoxShadow(color: const Color(0xFF9D4EDD).withOpacity(0.3), blurRadius: 30)
+                          ],
+                        ),
+                        child: const CircularProgressIndicator(
+                          color: Color(0xFFD2BBFF),
+                          strokeWidth: 3,
+                        ),
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text('FPS', style: GoogleFonts.jetBrainsMono(color: Colors.white54, fontSize: 10)),
-                          const SizedBox(width: 8),
-                          Text('59.8', style: GoogleFonts.jetBrainsMono(color: const Color(0xFF73DB9A), fontSize: 12, fontWeight: FontWeight.bold)),
-                        ],
+                      const SizedBox(height: 24),
+                      Text(
+                        widget.romPath == null ? 'BOOTING ROM...' : 'LOADING GAME...',
+                        style: GoogleFonts.outfit(
+                          color: const Color(0xFFD2BBFF),
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 2,
+                        ),
                       ),
-                    ),
+                    ],
                   ),
-                  const Center(
-                    child: Icon(Icons.play_circle_fill, color: Colors.white54, size: 64),
-                  ),
-                ],
+                ),
               ),
             ),
-            const Spacer(),
-            // D-Pad and AB Buttons
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  _buildDPad(),
-                  _buildActionButtons(),
-                ],
-              ),
-            ),
-            const Spacer(),
-            // Select and Start
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                _buildPillButton('SELECT'),
-                const SizedBox(width: 32),
-                _buildPillButton('START'),
-              ],
-            ),
-            const SizedBox(height: 32),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTriggerBtn(String label) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: const Color(0xFF2A2A2A),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFF4A4455)),
-      ),
-      child: Text(label, style: GoogleFonts.jetBrainsMono(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
-    );
-  }
-
-  Widget _buildDPad() {
-    return Container(
-      width: 120,
-      height: 120,
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E1E1E),
-        borderRadius: BorderRadius.circular(24),
-      ),
-      child: Stack(
-        children: [
-          Align(alignment: Alignment.topCenter, child: _dpadArrow(Icons.arrow_drop_up)),
-          Align(alignment: Alignment.bottomCenter, child: _dpadArrow(Icons.arrow_drop_down)),
-          Align(alignment: Alignment.centerLeft, child: _dpadArrow(Icons.arrow_left)),
-          Align(alignment: Alignment.centerRight, child: _dpadArrow(Icons.arrow_right)),
-          Center(
-            child: Container(
-              width: 32, height: 32,
-              decoration: const BoxDecoration(color: Color(0xFF2A2A2A), shape: BoxShape.circle),
-            ),
-          )
         ],
       ),
-    );
-  }
-
-  Widget _dpadArrow(IconData icon) {
-    return Container(
-      width: 40, height: 40,
-      decoration: BoxDecoration(
-        color: const Color(0xFF2A2A2A),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Icon(icon, color: Colors.white54, size: 24),
-    );
-  }
-
-  Widget _buildActionButtons() {
-    return SizedBox(
-      width: 140, height: 120,
-      child: Stack(
-        children: [
-          Positioned(
-            top: 0, right: 0,
-            child: _buildRoundBtn('A', const Color(0xFF8B5CF6)),
-          ),
-          Positioned(
-            bottom: 0, left: 0,
-            child: _buildRoundBtn('B', const Color(0xFF333333)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRoundBtn(String label, Color color) {
-    return Container(
-      width: 64, height: 64,
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white24, width: 2),
-      ),
-      child: Center(
-        child: Text(label, style: GoogleFonts.outfit(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
-      ),
-    );
-  }
-
-  Widget _buildPillButton(String label) {
-    return Column(
-      children: [
-        Container(
-          width: 56, height: 24,
-          decoration: BoxDecoration(
-            color: const Color(0xFF2A2A2A),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFF4A4455)),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(label, style: GoogleFonts.jetBrainsMono(color: Colors.white54, fontSize: 10)),
-      ],
     );
   }
 }
@@ -2388,7 +2440,7 @@ class GameSearchDelegate extends SearchDelegate<Wallpaper?> {
       return Container(
         color: const Color(0xFF131313),
         child: const Center(
-          child: Text('No ROMs found.', style: TextStyle(color: Colors.white54)),
+          child: Text('No licensed games found.', style: TextStyle(color: Colors.white54)),
         ),
       );
     }
@@ -2424,4 +2476,3 @@ class GameSearchDelegate extends SearchDelegate<Wallpaper?> {
     );
   }
 }
-
