@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -500,39 +501,133 @@ class _GalleryScreenState extends State<GalleryScreen>
         );
   }
 
+
   Widget _buildLibraryView() {
     final favoritesList = _favorites.toList();
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: const Color(0xFF131313),
       appBar: AppBar(
-        backgroundColor: Theme.of(context).colorScheme.surface,
-        title: const Text('My Library'),
-        centerTitle: true,
-      ),
-      body: favoritesList.isEmpty
-          ? const Center(
-              child: Text(
-                'No ROMs saved yet.\nExplore the Home tab and add some!',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 16),
+        backgroundColor: const Color(0xFF131313),
+        title: Row(
+          children: [
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFF3F008E)),
               ),
-            )
-          : GridView.builder(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                childAspectRatio: 0.75,
-                crossAxisSpacing: 16,
-                mainAxisSpacing: 16,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: const Icon(Icons.person, color: Color(0xFFD2BBFF), size: 20),
               ),
-              itemCount: favoritesList.length,
-              itemBuilder: (context, index) {
-                return _buildItemCard(favoritesList[index], index);
+            ),
+            const SizedBox(width: 12),
+            Text(
+              'RETRO HUB',
+              style: GoogleFonts.spaceGrotesk(
+                color: const Color(0xFFD2BBFF),
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          Container(
+            margin: const EdgeInsets.only(right: 16),
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              border: Border.all(color: const Color(0xFF4A4455)),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: IconButton(
+              padding: EdgeInsets.zero,
+              icon: const Icon(Icons.search, color: Color(0xFFD2BBFF), size: 20),
+              onPressed: () {
+                showSearch(
+                  context: context,
+                  delegate: GameSearchDelegate(_allItems),
+                );
               },
             ),
+          )
+        ],
+      ),
+      body: Column(
+        children: [
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              children: [
+                _buildFilterChip('ALL', true),
+                _buildFilterChip('GBA', false),
+                _buildFilterChip('GBC', false),
+                _buildFilterChip('GB', false),
+                _buildFilterChip('NES', false),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Library', style: GoogleFonts.spaceGrotesk(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+                Row(
+                  children: [
+                    const Icon(Icons.sort, color: Color(0xFF73DB9A), size: 16),
+                    const SizedBox(width: 4),
+                    Text('RECENT', style: GoogleFonts.jetBrainsMono(color: const Color(0xFF73DB9A), fontSize: 12, fontWeight: FontWeight.bold)),
+                    const Icon(Icons.keyboard_arrow_down, color: Color(0xFF73DB9A), size: 16),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: favoritesList.isEmpty
+                ? const Center(child: Text('No ROMs saved yet.', style: TextStyle(color: Colors.white54)))
+                : GridView.builder(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 2,
+                      childAspectRatio: 0.65,
+                      crossAxisSpacing: 16,
+                      mainAxisSpacing: 16,
+                    ),
+                    itemCount: favoritesList.length,
+                    itemBuilder: (context, index) {
+                      return _buildItemCard(favoritesList[index], index);
+                    },
+                  ),
+          ),
+        ],
+      ),
     );
   }
 
+  Widget _buildFilterChip(String label, bool isSelected) {
+    return Container(
+      margin: const EdgeInsets.only(right: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      decoration: BoxDecoration(
+        color: isSelected ? const Color(0xFFD2BBFF) : Colors.transparent,
+        border: Border.all(color: isSelected ? const Color(0xFFD2BBFF) : const Color(0xFF4A4455)),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        label,
+        style: GoogleFonts.jetBrainsMono(
+          color: isSelected ? const Color(0xFF3F008E) : const Color(0xFFE5E2E1),
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
   Widget _buildSocialView() {
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -973,11 +1068,21 @@ class _GalleryScreenState extends State<GalleryScreen>
               ),
             ),
             const Spacer(),
-            GestureDetector(
-              onTap: () {
+            TextButton(
+              onPressed: () {
                 _selectCategory(_all);
                 setState(() => _visibleCount = _allItems.length);
+                _scrollController.animateTo(
+                  650,
+                  duration: const Duration(milliseconds: 500),
+                  curve: Curves.easeOut,
+                );
               },
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
               child: Text(
                 'VIEW ALL',
                 style: GoogleFonts.jetBrainsMono(
@@ -999,99 +1104,131 @@ class _GalleryScreenState extends State<GalleryScreen>
     );
   }
 
+
+
   Widget _buildItemCard(Wallpaper item, int index) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => DetailScreen(
-                wallpaper: item,
-                isFavorite: _favorites.contains(item),
-                onFavorite: () {
-                  setState(() {
-                    if (_favorites.contains(item)) {
-                      _favorites.remove(item);
-                    } else {
-                      _favorites.add(item);
-                    }
-                  });
-                },
-              ),
+    final rand = math.Random(item.id.hashCode);
+    final rating = (4.0 + rand.nextDouble() * 0.9).toStringAsFixed(1);
+    final fps = rand.nextBool() ? '60 FPS' : '30 FPS';
+
+    return GestureDetector(
+      onTap: () {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => DetailScreen(
+              wallpaper: item,
+              isFavorite: _favorites.contains(item),
+              onFavorite: () {
+                setState(() {
+                  if (_favorites.contains(item)) {
+                    _favorites.remove(item);
+                  } else {
+                    _favorites.add(item);
+                  }
+                });
+              },
+              allItems: _allItems,
             ),
-          );
-        },
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0x33FFFFFF)),
           ),
-          clipBehavior: Clip.antiAlias,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              CachedNetworkImage(
-                imageUrl: item.thumbUrl,
-                fit: BoxFit.cover,
-                placeholder: (_, _) => Container(color: const Color(0xFF1E1E1E)),
-                errorWidget: (_, _, _) => Container(
-                  color: const Color(0xFF1E1E1E),
-                  child: const Icon(Icons.videogame_asset_outlined, color: Colors.grey),
-                ),
-              ),
-              Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.bottomCenter,
-                      end: Alignment.topCenter,
-                      colors: [Colors.black.withOpacity(0.9), Colors.transparent],
-                    ),
+        );
+      },
+      child: Container(
+        decoration: BoxDecoration(
+          color: const Color(0xFF1E1E1E),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFF3A3939)),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              flex: 4,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  CachedNetworkImage(
+                    imageUrl: item.thumbUrl,
+                    fit: BoxFit.cover,
+                    placeholder: (_, _) => Container(color: const Color(0xFF2A2A2A)),
+                    errorWidget: (_, _, _) => Container(color: const Color(0xFF2A2A2A)),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        item.title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.outfit(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
-                          height: 1.1,
-                        ),
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.7),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: const Color(0xFF73DB9A)),
                       ),
-                      const SizedBox(height: 4),
-                      Text(
+                      child: Text(
                         item.category.toUpperCase(),
                         style: GoogleFonts.jetBrainsMono(
-                          color: item.accent,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.5,
+                          color: const Color(0xFF73DB9A),
+                          fontSize: 8,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
-                    ],
+                    ),
                   ),
+                ],
+              ),
+            ),
+            Expanded(
+              flex: 3,
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      item.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.outfit(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        height: 1.2,
+                      ),
+                    ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          fps,
+                          style: GoogleFonts.jetBrainsMono(
+                            color: const Color(0xFFCCC3D8),
+                            fontSize: 10,
+                          ),
+                        ),
+                        Row(
+                          children: [
+                            const Icon(Icons.star_outline, color: Color(0xFFF97316), size: 12),
+                            const SizedBox(width: 4),
+                            Text(
+                              rating,
+                              style: GoogleFonts.jetBrainsMono(
+                                color: const Color(0xFFCCC3D8),
+                                fontSize: 10,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
-
-
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1232,22 +1369,101 @@ class _CategoryTile extends StatelessWidget {
   }
 }
 
-class _TrendingRomRow extends StatelessWidget {
+class _TrendingRomRow extends StatefulWidget {
   const _TrendingRomRow({required this.item, required this.progress});
 
   final Wallpaper item;
   final double progress;
 
   @override
+  State<_TrendingRomRow> createState() => _TrendingRomRowState();
+}
+
+class _TrendingRomRowState extends State<_TrendingRomRow> {
+  bool _isDownloading = false;
+  double _downloadProgress = 0.0;
+
+  Future<void> _download() async {
+    if (_isDownloading) return;
+    setState(() {
+      _isDownloading = true;
+      _downloadProgress = 0.0;
+    });
+
+    try {
+      final downloadUrl = widget.item.fullUrl;
+      final lowerUrl = downloadUrl.toLowerCase();
+      final isImage = lowerUrl.endsWith('.jpg') || lowerUrl.endsWith('.jpeg') || lowerUrl.endsWith('.png') || lowerUrl.endsWith('.webp');
+      
+      final ext = downloadUrl.contains('.') ? '.${downloadUrl.split('.').last}' : (isImage ? '.jpg' : '.zip');
+      
+      final temp = await getTemporaryDirectory();
+      final file = File('${temp.path}/${widget.item.id}$ext');
+
+      await Dio().download(
+        downloadUrl, 
+        file.path,
+        onReceiveProgress: (received, total) {
+          if (total != -1 && mounted) {
+            setState(() {
+              _downloadProgress = received / total;
+            });
+          }
+        },
+      );
+
+      if (!isImage) {
+        await Share.shareXFiles([XFile(file.path)], text: 'Save your ROM');
+      } else {
+        final bytes = await file.readAsBytes();
+        await Gal.putImageBytes(
+          bytes,
+          name: widget.item.id,
+          album: 'Retro Hub',
+        );
+      }
+
+      InterstitialAdService.instance.recordAction();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(!isImage ? 'Ready to save/share!' : 'Saved to Gallery! 🎉'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: const Color(0xFF1E2630),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Download failed. Please try again.'),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isDownloading = false;
+          _downloadProgress = 0.0;
+        });
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final displayProgress = _isDownloading ? _downloadProgress : widget.progress;
+    final progressColor = _isDownloading ? const Color(0xFFD2BBFF) : const Color(0xFF73DB9A);
+
     return InkWell(
       onTap: () {
         Navigator.of(context).push(
           MaterialPageRoute(
             builder: (_) => DetailScreen(
-              wallpaper: item,
+              wallpaper: widget.item,
               isFavorite: false,
               onFavorite: () {},
+              allItems: const [],
             ),
           ),
         );
@@ -1266,7 +1482,7 @@ class _TrendingRomRow extends StatelessWidget {
             ClipRRect(
               borderRadius: BorderRadius.circular(4),
               child: CachedNetworkImage(
-                imageUrl: item.thumbUrl,
+                imageUrl: widget.item.thumbUrl,
                 width: 64,
                 height: 64,
                 fit: BoxFit.cover,
@@ -1298,7 +1514,7 @@ class _TrendingRomRow extends StatelessWidget {
                     children: [
                       Expanded(
                         child: Text(
-                          item.title,
+                          widget.item.title,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: GoogleFonts.outfit(
@@ -1311,9 +1527,11 @@ class _TrendingRomRow extends StatelessWidget {
                       ),
                       const SizedBox(width: 8),
                       Text(
-                        '${(progress * 100).round()}%\nCOMPATIBLE',
+                        _isDownloading 
+                            ? '${(_downloadProgress * 100).round()}%\nDOWNLOADING' 
+                            : '${(widget.progress * 100).round()}%\nCOMPATIBLE',
                         style: GoogleFonts.jetBrainsMono(
-                          color: const Color(0xFF73DB9A),
+                          color: progressColor,
                           fontSize: 10,
                           fontWeight: FontWeight.w700,
                           height: 1.2,
@@ -1324,7 +1542,7 @@ class _TrendingRomRow extends StatelessWidget {
                   ),
                   const SizedBox(height: 7),
                   Text(
-                    '${item.category.toUpperCase()}  -  ${item.fullUrl.toLowerCase().endsWith('.zip') ? 'ROM' : '8MB'}',
+                    '${widget.item.category.toUpperCase()}  -  ${widget.item.fullUrl.toLowerCase().endsWith('.zip') ? 'ROM' : '8MB'}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: GoogleFonts.jetBrainsMono(
@@ -1338,13 +1556,13 @@ class _TrendingRomRow extends StatelessWidget {
                   ClipRRect(
                     borderRadius: BorderRadius.circular(12),
                     child: LinearProgressIndicator(
-                      value: progress,
+                      value: displayProgress,
                       minHeight: 4,
                       backgroundColor: const Color(0xFF353534),
                       valueColor: AlwaysStoppedAnimation<Color>(
-                        progress >= 1
+                        displayProgress >= 1
                             ? const Color(0xFF73DB9A)
-                            : const Color(0xFFD2BBFF),
+                            : progressColor,
                       ),
                     ),
                   ),
@@ -1352,18 +1570,29 @@ class _TrendingRomRow extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 12),
-            Container(
-              width: 36,
-              height: 40,
-              decoration: BoxDecoration(
-                color: const Color(0xFF2A2A2A),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFF4A4455)),
-              ),
-              child: const Icon(
-                Icons.download_rounded,
-                color: Color(0xFFD2BBFF),
-                size: 18,
+            GestureDetector(
+              onTap: _download,
+              child: Container(
+                width: 36,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: _isDownloading ? const Color(0xFF3F008E) : const Color(0xFF2A2A2A),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: _isDownloading ? const Color(0xFFD2BBFF) : const Color(0xFF4A4455)),
+                ),
+                child: _isDownloading
+                    ? const Padding(
+                        padding: EdgeInsets.all(10.0),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Color(0xFFD2BBFF),
+                        ),
+                      )
+                    : const Icon(
+                        Icons.download_rounded,
+                        color: Color(0xFFD2BBFF),
+                        size: 18,
+                      ),
               ),
             ),
           ],
@@ -1521,6 +1750,8 @@ class _NavItem extends StatelessWidget {
   }
 }
 
+
+
 class DetailScreen extends StatefulWidget {
   const DetailScreen({
     super.key,
@@ -1538,21 +1769,16 @@ class DetailScreen extends StatefulWidget {
 }
 
 class _DetailScreenState extends State<DetailScreen> {
-  bool _downloading = false;
-  double _progress = 0.0;
-  late bool _isFav;
-
-  @override
-  void initState() {
-    super.initState();
-    _isFav = widget.isFavorite;
-  }
+  bool _isDownloading = false;
+  double _downloadProgress = 0.0;
 
   Future<void> _download() async {
+    if (_isDownloading) return;
     setState(() {
-      _downloading = true;
-      _progress = 0.0;
+      _isDownloading = true;
+      _downloadProgress = 0.0;
     });
+
     try {
       final downloadUrl = widget.wallpaper.fullUrl;
       final lowerUrl = downloadUrl.toLowerCase();
@@ -1569,7 +1795,7 @@ class _DetailScreenState extends State<DetailScreen> {
         onReceiveProgress: (received, total) {
           if (total != -1 && mounted) {
             setState(() {
-              _progress = received / total;
+              _downloadProgress = received / total;
             });
           }
         },
@@ -1579,24 +1805,15 @@ class _DetailScreenState extends State<DetailScreen> {
         await Share.shareXFiles([XFile(file.path)], text: 'Save your ROM');
       } else {
         final bytes = await file.readAsBytes();
-        await Gal.putImageBytes(
-          bytes,
-          name: widget.wallpaper.id,
-          album: 'Retro Hub',
-        );
+        await Gal.putImageBytes(bytes, name: widget.wallpaper.id, album: 'Retro Hub');
       }
 
       InterstitialAdService.instance.recordAction();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            !isImage ? 'Ready to save/share!' : 'Saved to Gallery! 🎉',
-          ),
+          content: Text(!isImage ? 'Ready to save/share!' : 'Saved to Gallery! 🎉'),
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
           backgroundColor: const Color(0xFF1E2630),
         ),
       );
@@ -1609,263 +1826,516 @@ class _DetailScreenState extends State<DetailScreen> {
         ),
       );
     } finally {
-      if (mounted) setState(() {
-        _downloading = false;
-        _progress = 0.0;
-      });
-    }
-  }
-
-  Future<void> _share() async {
-    try {
-      final isZip = widget.wallpaper.fullUrl.toLowerCase().endsWith('.zip');
-      final downloadUrl = widget.wallpaper.fullUrl;
-      final temp = await getTemporaryDirectory();
-      final ext = isZip ? '.zip' : '.jpg';
-      final file = File('${temp.path}/${widget.wallpaper.id}$ext');
-      final response = await Dio().download(downloadUrl, file.path);
-      if (response.statusCode == 200) {
-        await Share.shareXFiles([
-          XFile(file.path),
-        ], text: 'Check out this classic game: ${widget.wallpaper.title}');
+      if (mounted) {
+        setState(() {
+          _isDownloading = false;
+          _downloadProgress = 0.0;
+        });
       }
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Share failed.')));
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: Hero(
-              tag: 'image_${widget.wallpaper.id}',
-              child: InteractiveViewer(
-                minScale: 1,
-                maxScale: 4,
-                child: CachedNetworkImage(
-                  imageUrl: widget
-                      .wallpaper
-                      .thumbUrl, // Display thumbnail to avoid crash if fullUrl is a ZIP
-                  fit: BoxFit.cover,
-                  placeholder: (_, _) => Container(
-                    color: widget.wallpaper.accent.withOpacity(0.1),
+      backgroundColor: const Color(0xFF131313),
+      body: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Stack(
+              children: [
+                ShaderMask(
+                  shaderCallback: (rect) {
+                    return const LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [Colors.black, Colors.transparent],
+                      stops: [0.6, 1.0],
+                    ).createShader(rect);
+                  },
+                  blendMode: BlendMode.dstIn,
+                  child: CachedNetworkImage(
+                    imageUrl: widget.wallpaper.thumbUrl,
+                    height: 350,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    errorWidget: (_, __, ___) => Container(height: 350, color: const Color(0xFF2A2A2A)),
                   ),
-                  errorWidget: (_, _, _) => const Center(
-                    child: Icon(
-                      Icons.broken_image_outlined,
-                      color: Colors.grey,
+                ),
+                SafeArea(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 8.0),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.arrow_back, color: Colors.white),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                        Text(
+                          'RETRO HUB',
+                          style: GoogleFonts.spaceGrotesk(
+                            color: const Color(0xFFD2BBFF),
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        Row(
+                          children: [
+                            const Icon(Icons.search, color: Color(0xFFD2BBFF)),
+                            const SizedBox(width: 12),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: Container(
+                                width: 28, height: 28,
+                                color: const Color(0xFF3F008E),
+                                child: const Icon(Icons.person, color: Colors.white, size: 16),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
                 ),
-              ),
-            ),
-          ),
-
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.black.withOpacity(0.4),
-                    Colors.transparent,
-                    Colors.transparent,
-                    Colors.black.withOpacity(0.8),
-                  ],
-                  stops: const [0.0, 0.2, 0.6, 1.0],
-                ),
-              ),
-            ),
-          ),
-
-          SafeArea(
-            child: Align(
-              alignment: Alignment.topLeft,
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(24),
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                    child: Container(
-                      color: Colors.black.withOpacity(0.2),
-                      child: IconButton(
-                        tooltip: 'Back',
-                        onPressed: () => Navigator.of(context).pop(),
-                        icon: const Icon(
-                          Icons.arrow_back_ios_new_rounded,
-                          color: Colors.white,
-                          size: 20,
+                Positioned(
+                  bottom: 24,
+                  left: 16,
+                  right: 16,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.green.withOpacity(0.1),
+                          border: Border.all(color: Colors.green.withOpacity(0.5)),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          widget.wallpaper.category.toUpperCase(),
+                          style: GoogleFonts.jetBrainsMono(
+                            color: Colors.green,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1.1,
+                          ),
                         ),
                       ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-
-          Positioned(
-            left: 20,
-            right: 20,
-            bottom: MediaQuery.paddingOf(context).bottom + 24,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: widget.wallpaper.accent.withOpacity(0.8),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    widget.wallpaper.category.toUpperCase(),
-                    style: const TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.black,
-                      letterSpacing: 1.0,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  widget.wallpaper.title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
-                    height: 1.15,
-                    letterSpacing: -0.5,
-                    shadows: [
-                      Shadow(
-                        color: Colors.black.withOpacity(0.5),
-                        blurRadius: 10,
-                        offset: const Offset(0, 2),
+                      const SizedBox(height: 8),
+                      Text(
+                        widget.wallpaper.title,
+                        style: GoogleFonts.outfit(
+                          color: Colors.white,
+                          fontSize: 32,
+                          fontWeight: FontWeight.bold,
+                          height: 1.1,
+                        ),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 24),
-                Row(
-                  children: [
-                    Expanded(
-                      child: FilledButton(
-                        onPressed: _downloading ? null : _download,
-                        style: FilledButton.styleFrom(
-                          backgroundColor: Theme.of(
-                            context,
-                          ).colorScheme.primary,
-                          foregroundColor: Colors.black,
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                        ),
-                        child: _downloading
-                            ? Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  const SizedBox.square(
-                                    dimension: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.black,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Text(
-                                    'Downloading ${(_progress * 100).toInt()}%',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 16,
-                                      color: Colors.black,
-                                    ),
-                                  ),
-                                ],
-                              )
-                            : const Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(Icons.download_rounded),
-                                  SizedBox(width: 8),
-                                  Text(
-                                    'Download ROM',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 16,
-                                      letterSpacing: 0.2,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(16),
-                      child: BackdropFilter(
-                        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                        child: Container(
-                          color: Colors.white.withOpacity(0.1),
-                          child: IconButton(
-                            padding: const EdgeInsets.all(16),
-                            icon: Icon(
-                              _isFav ? Icons.favorite : Icons.favorite_border,
-                              color: _isFav
-                                  ? Theme.of(context).colorScheme.primary
-                                  : Colors.white,
-                            ),
-                            onPressed: () {
-                              setState(() => _isFav = !_isFav);
-                              widget.onFavorite();
-                            },
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(16),
-                      child: BackdropFilter(
-                        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                        child: Container(
-                          color: Colors.white.withOpacity(0.1),
-                          child: IconButton(
-                            padding: const EdgeInsets.all(16),
-                            icon: const Icon(
-                              Icons.ios_share_rounded,
-                              color: Colors.white,
-                            ),
-                            onPressed: _share,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
               ],
             ),
+            
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(child: _buildStatBox(Icons.star, Colors.green, '4.9', 'RATING')),
+                      const SizedBox(width: 12),
+                      Expanded(child: _buildStatBox(Icons.download, const Color(0xFFD2BBFF), '2.4M', 'SAVES')),
+                      const SizedBox(width: 12),
+                      Expanded(child: _buildStatBox(Icons.sd_storage, const Color(0xFFD2BBFF), '16MB', 'SIZE')),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.push(context, MaterialPageRoute(builder: (_) => EmulatorScreen(game: widget.wallpaper)));
+                    },
+                    icon: const Icon(Icons.play_arrow, color: Colors.white),
+                    label: const Text('PLAY NOW', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF8B5CF6),
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    onPressed: _download,
+                    icon: _isDownloading 
+                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.green))
+                        : const Icon(Icons.cloud_download_outlined, color: Colors.green),
+                    label: Text(
+                      _isDownloading ? 'DOWNLOADING ${(_downloadProgress * 100).toInt()}%' : 'DOWNLOAD ROM',
+                      style: const TextStyle(color: Colors.green, fontSize: 14, fontWeight: FontWeight.bold)
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Colors.green),
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+                  Text('SYSTEM INTEL', style: GoogleFonts.jetBrainsMono(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1E1E1E),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFF333333)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Battle through the region with new expanded features. Navigate the clash to awaken legendary allies. Experience the ultimate RPG odyssey with enhanced challenges and seamless compatibility.',
+                          style: GoogleFonts.outfit(color: Colors.white70, fontSize: 14, height: 1.5),
+                        ),
+                        const SizedBox(height: 16),
+                        Row(
+                          children: [
+                            _buildTag('RPG'),
+                            const SizedBox(width: 8),
+                            _buildTag('COLLECTOR'),
+                            const SizedBox(width: 8),
+                            _buildTag('TURN-BASED'),
+                          ],
+                        )
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('COMMUNITY FEEDBACK', style: GoogleFonts.jetBrainsMono(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+                      Text('View All', style: GoogleFonts.outfit(color: const Color(0xFFD2BBFF), fontSize: 12)),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  _buildReviewCard('AceTrainer_92', 'The definitive experience. Emulator runs smooth as silk on Retro Hub at 60fps with zero input lag.'),
+                  const SizedBox(height: 12),
+                  _buildReviewCard('PixelQueen', 'Best version of the games. Battle Frontier is still a masterclass in endgame design.'),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatBox(IconData icon, Color iconColor, String value, String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1C1C1E),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF333333)),
+      ),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, color: iconColor, size: 16),
+              const SizedBox(width: 6),
+              Text(value, style: GoogleFonts.jetBrainsMono(color: iconColor, fontWeight: FontWeight.bold, fontSize: 14)),
+            ],
           ),
+          const SizedBox(height: 4),
+          Text(label, style: GoogleFonts.jetBrainsMono(color: Colors.white54, fontSize: 10, fontWeight: FontWeight.bold)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTag(String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFF333333),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(text, style: GoogleFonts.jetBrainsMono(color: Colors.white54, fontSize: 10)),
+    );
+  }
+
+  Widget _buildReviewCard(String user, String text) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1C1B1B),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF333333)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const CircleAvatar(
+                radius: 12,
+                backgroundColor: Color(0xFF3F008E),
+                child: Icon(Icons.person, size: 14, color: Colors.white),
+              ),
+              const SizedBox(width: 8),
+              Text(user, style: GoogleFonts.jetBrainsMono(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+              const Spacer(),
+              const Row(
+                children: [
+                  Icon(Icons.star, color: Colors.green, size: 12),
+                  Icon(Icons.star, color: Colors.green, size: 12),
+                  Icon(Icons.star, color: Colors.green, size: 12),
+                  Icon(Icons.star, color: Colors.green, size: 12),
+                  Icon(Icons.star, color: Colors.green, size: 12),
+                ],
+              )
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(text, style: GoogleFonts.outfit(color: Colors.white70, fontSize: 13, height: 1.4)),
         ],
       ),
     );
   }
 }
 
+class EmulatorScreen extends StatefulWidget {
+  final Wallpaper game;
+  const EmulatorScreen({super.key, required this.game});
+
+  @override
+  State<EmulatorScreen> createState() => _EmulatorScreenState();
+}
+
+class _EmulatorScreenState extends State<EmulatorScreen> {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF131313),
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Text(
+          'RETRO HUB',
+          style: GoogleFonts.spaceGrotesk(
+            color: const Color(0xFFD2BBFF),
+            fontSize: 20,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 16.0),
+            child: Center(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  width: 32, height: 32,
+                  color: const Color(0xFF3F008E),
+                  child: const Icon(Icons.person, color: Colors.white, size: 18),
+                ),
+              ),
+            ),
+          )
+        ],
+      ),
+      body: SafeArea(
+        child: Column(
+          children: [
+            const SizedBox(height: 16),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  _buildTriggerBtn('L-TRIGGER'),
+                  _buildTriggerBtn('R-TRIGGER'),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            // Game screen
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16),
+              height: 240,
+              decoration: BoxDecoration(
+                color: Colors.black,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFF73DB9A), width: 2),
+                image: DecorationImage(
+                  image: CachedNetworkImageProvider(widget.game.thumbUrl),
+                  fit: BoxFit.cover,
+                  colorFilter: ColorFilter.mode(Colors.black.withOpacity(0.2), BlendMode.darken),
+                )
+              ),
+              child: Stack(
+                children: [
+                  Positioned(
+                    top: 12,
+                    right: 12,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.6),
+                        border: Border.all(color: const Color(0xFF73DB9A)),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text('FPS', style: GoogleFonts.jetBrainsMono(color: Colors.white54, fontSize: 10)),
+                          const SizedBox(width: 8),
+                          Text('59.8', style: GoogleFonts.jetBrainsMono(color: const Color(0xFF73DB9A), fontSize: 12, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const Center(
+                    child: Icon(Icons.play_circle_fill, color: Colors.white54, size: 64),
+                  ),
+                ],
+              ),
+            ),
+            const Spacer(),
+            // D-Pad and AB Buttons
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 32),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  _buildDPad(),
+                  _buildActionButtons(),
+                ],
+              ),
+            ),
+            const Spacer(),
+            // Select and Start
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _buildPillButton('SELECT'),
+                const SizedBox(width: 32),
+                _buildPillButton('START'),
+              ],
+            ),
+            const SizedBox(height: 32),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTriggerBtn(String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF2A2A2A),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFF4A4455)),
+      ),
+      child: Text(label, style: GoogleFonts.jetBrainsMono(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+    );
+  }
+
+  Widget _buildDPad() {
+    return Container(
+      width: 120,
+      height: 120,
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E1E1E),
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Stack(
+        children: [
+          Align(alignment: Alignment.topCenter, child: _dpadArrow(Icons.arrow_drop_up)),
+          Align(alignment: Alignment.bottomCenter, child: _dpadArrow(Icons.arrow_drop_down)),
+          Align(alignment: Alignment.centerLeft, child: _dpadArrow(Icons.arrow_left)),
+          Align(alignment: Alignment.centerRight, child: _dpadArrow(Icons.arrow_right)),
+          Center(
+            child: Container(
+              width: 32, height: 32,
+              decoration: const BoxDecoration(color: Color(0xFF2A2A2A), shape: BoxShape.circle),
+            ),
+          )
+        ],
+      ),
+    );
+  }
+
+  Widget _dpadArrow(IconData icon) {
+    return Container(
+      width: 40, height: 40,
+      decoration: BoxDecoration(
+        color: const Color(0xFF2A2A2A),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Icon(icon, color: Colors.white54, size: 24),
+    );
+  }
+
+  Widget _buildActionButtons() {
+    return SizedBox(
+      width: 140, height: 120,
+      child: Stack(
+        children: [
+          Positioned(
+            top: 0, right: 0,
+            child: _buildRoundBtn('A', const Color(0xFF8B5CF6)),
+          ),
+          Positioned(
+            bottom: 0, left: 0,
+            child: _buildRoundBtn('B', const Color(0xFF333333)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRoundBtn(String label, Color color) {
+    return Container(
+      width: 64, height: 64,
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white24, width: 2),
+      ),
+      child: Center(
+        child: Text(label, style: GoogleFonts.outfit(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+      ),
+    );
+  }
+
+  Widget _buildPillButton(String label) {
+    return Column(
+      children: [
+        Container(
+          width: 56, height: 24,
+          decoration: BoxDecoration(
+            color: const Color(0xFF2A2A2A),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFF4A4455)),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(label, style: GoogleFonts.jetBrainsMono(color: Colors.white54, fontSize: 10)),
+      ],
+    );
+  }
+}
 class GameSearchDelegate extends SearchDelegate<Wallpaper?> {
   final List<Wallpaper> items;
   GameSearchDelegate(this.items);
