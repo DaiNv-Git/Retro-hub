@@ -46,6 +46,7 @@ dependencies:
   file_picker: ^11.0.2
   archive: ^4.0.9
   webview_flutter_android: ^4.12.0
+  google_mobile_ads: ^8.0.0
 
 dev_dependencies:
   flutter_test:

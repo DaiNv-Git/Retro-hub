@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:webview_flutter/webview_flutter.dart' hide X509Certificate;
@@ -27,6 +28,7 @@ class MyHttpOverrides extends HttpOverrides {
 void main() async {
   HttpOverrides.global = MyHttpOverrides();
   WidgetsFlutterBinding.ensureInitialized();
+  unawaited(AdService.instance.initialize());
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
@@ -47,7 +49,7 @@ class RetroHubApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Retro Hub',
+      title: 'GBAGame - GBA Emulator & Games',
       themeMode: ThemeMode.dark,
       darkTheme: ThemeData.dark().copyWith(
         scaffoldBackgroundColor: const Color(0xFF0B0914),
@@ -58,6 +60,186 @@ class RetroHubApp extends StatelessWidget {
       ),
       home: showOnboarding ? const OnboardingScreen() : const MainTabScreen(),
       debugShowCheckedModeBanner: false,
+    );
+  }
+}
+
+// ==========================================
+// ADS
+// ==========================================
+
+class AdConfig {
+  // Replace these test IDs with your real AdMob IDs before publishing ads.
+  static const androidAppId = 'ca-app-pub-3940256099942544~3347511713';
+  static const iosAppId = 'ca-app-pub-3940256099942544~1458002511';
+  static const androidBannerId = 'ca-app-pub-3940256099942544/6300978111';
+  static const iosBannerId = 'ca-app-pub-3940256099942544/2934735716';
+  static const androidInterstitialId = 'ca-app-pub-3940256099942544/1033173712';
+  static const iosInterstitialId = 'ca-app-pub-3940256099942544/4411468910';
+
+  static bool get supportsAds => Platform.isAndroid || Platform.isIOS;
+
+  static String get bannerId {
+    if (Platform.isIOS) return iosBannerId;
+    return androidBannerId;
+  }
+
+  static String get interstitialId {
+    if (Platform.isIOS) return iosInterstitialId;
+    return androidInterstitialId;
+  }
+}
+
+class AdService {
+  AdService._();
+
+  static final AdService instance = AdService._();
+
+  bool _initialized = false;
+  bool _isLoadingInterstitial = false;
+  InterstitialAd? _interstitialAd;
+  int _completedDownloadCount = 0;
+  final ValueNotifier<bool> bannerPaused = ValueNotifier<bool>(false);
+
+  Future<void> initialize() async {
+    if (_initialized || !AdConfig.supportsAds) return;
+    try {
+      await MobileAds.instance.initialize();
+      _initialized = true;
+      _loadInterstitial();
+    } catch (_) {
+      // Ads should never block the app from opening.
+    }
+  }
+
+  void _loadInterstitial() {
+    if (!_initialized || _isLoadingInterstitial || _interstitialAd != null) {
+      return;
+    }
+
+    _isLoadingInterstitial = true;
+    InterstitialAd.load(
+      adUnitId: AdConfig.interstitialId,
+      request: const AdRequest(),
+      adLoadCallback: InterstitialAdLoadCallback(
+        onAdLoaded: (ad) {
+          _isLoadingInterstitial = false;
+          _interstitialAd = ad;
+          _interstitialAd?.fullScreenContentCallback =
+              FullScreenContentCallback(
+                onAdDismissedFullScreenContent: (ad) {
+                  ad.dispose();
+                  _interstitialAd = null;
+                  _loadInterstitial();
+                },
+                onAdFailedToShowFullScreenContent: (ad, error) {
+                  ad.dispose();
+                  _interstitialAd = null;
+                  _loadInterstitial();
+                },
+              );
+        },
+        onAdFailedToLoad: (_) {
+          _isLoadingInterstitial = false;
+          _interstitialAd = null;
+        },
+      ),
+    );
+  }
+
+  void markDownloadCompleted() {
+    if (!_initialized) return;
+    _completedDownloadCount++;
+    if (_completedDownloadCount % 3 == 0) {
+      showInterstitialIfReady();
+    } else {
+      _loadInterstitial();
+    }
+  }
+
+  void showInterstitialIfReady() {
+    final ad = _interstitialAd;
+    if (ad == null) {
+      _loadInterstitial();
+      return;
+    }
+    _interstitialAd = null;
+    ad.show();
+  }
+
+  Future<void> pauseBannerForExternalUi() async {
+    bannerPaused.value = true;
+    await WidgetsBinding.instance.endOfFrame;
+  }
+
+  void resumeBanner() {
+    bannerPaused.value = false;
+  }
+}
+
+class AdBanner extends StatefulWidget {
+  const AdBanner({super.key});
+
+  @override
+  State<AdBanner> createState() => _AdBannerState();
+}
+
+class _AdBannerState extends State<AdBanner> {
+  BannerAd? _bannerAd;
+  bool _isLoaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (!AdConfig.supportsAds) return;
+    _bannerAd = BannerAd(
+      adUnitId: AdConfig.bannerId,
+      size: AdSize.banner,
+      request: const AdRequest(),
+      listener: BannerAdListener(
+        onAdLoaded: (_) {
+          if (mounted) {
+            setState(() => _isLoaded = true);
+          }
+        },
+        onAdFailedToLoad: (ad, _) {
+          ad.dispose();
+          if (mounted) {
+            setState(() => _isLoaded = false);
+          }
+        },
+      ),
+    )..load();
+  }
+
+  @override
+  void dispose() {
+    _bannerAd?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: AdService.instance.bannerPaused,
+      builder: (context, isPaused, child) {
+        final bannerAd = _bannerAd;
+        if (isPaused || !_isLoaded || bannerAd == null) {
+          return const SizedBox.shrink();
+        }
+
+        return Container(
+          width: double.infinity,
+          height: bannerAd.size.height.toDouble(),
+          alignment: Alignment.center,
+          color: const Color(0xFF0B0914),
+          child: SizedBox(
+            width: bannerAd.size.width.toDouble(),
+            height: bannerAd.size.height.toDouble(),
+            child: AdWidget(ad: bannerAd),
+          ),
+        );
+      },
     );
   }
 }
@@ -138,6 +320,33 @@ class HomebrewGame {
     required this.rating,
   });
 
+  factory HomebrewGame.fromApiJson(Map<String, dynamic> json) {
+    final title = _decodeHtml(json['title'] as String? ?? 'GBA Game');
+    final platform = _decodeHtml(
+      json['platform'] as String? ?? 'Game Boy Advance',
+    );
+    final region = _decodeHtml(json['region'] as String? ?? 'Unknown region');
+    final version = _decodeHtml(json['version'] as String? ?? '1.0');
+    final downloadUrl = json['downloadUrl'] as String? ?? '';
+    final fileName =
+        json['fileName'] as String? ??
+        Uri.tryParse(downloadUrl)?.pathSegments.last ??
+        '';
+
+    return HomebrewGame(
+      title: title,
+      developer: '$region • v$version',
+      description: '$platform game available from the GBA Game Top library.',
+      coverUrl: json['thumbnail'] as String? ?? '',
+      downloadUrl: downloadUrl,
+      fileName: fileName,
+      officialPageUrl: json['sourceUrl'] as String? ?? downloadUrl,
+      category: platform.replaceFirst('Game Boy Advance', 'GBA'),
+      fileSize: fileName.toLowerCase().endsWith('.zip') ? 'ZIP ROM' : 'ROM',
+      rating: 4.8,
+    );
+  }
+
   bool get hasDirectDownload => downloadUrl.isNotEmpty;
   bool get isZipDownload => fileName.toLowerCase().endsWith('.zip');
   String get playableFileName {
@@ -198,6 +407,17 @@ class ImportGameOptions {
 }
 
 const String _importedGamesPrefsKey = 'imported_games';
+const String _apiBaseUrl = 'https://gbagametop.shop';
+
+String _decodeHtml(String value) {
+  return value
+      .replaceAll('&#8211;', '-')
+      .replaceAll('&#8217;', "'")
+      .replaceAll('&#038;', '&')
+      .replaceAll('&amp;', '&')
+      .replaceAll('&quot;', '"')
+      .replaceAll('&#39;', "'");
+}
 
 String _cleanGameTitle(String fileName) {
   final dotIndex = fileName.lastIndexOf('.');
@@ -229,9 +449,8 @@ String _formatFileSize(int bytes) {
   return '$bytes B';
 }
 
-// Official free/public GBA homebrew sources only. If a project does not expose
-// a direct public ROM file, the app opens its official page instead.
-final List<HomebrewGame> legalGames = [
+// Fallback games used only when the remote API cannot be reached.
+final List<HomebrewGame> fallbackGames = [
   const HomebrewGame(
     title: 'Anguna: Warriors of Virtue',
     developer: 'Bite the Chili Productions',
@@ -323,41 +542,47 @@ class _MainTabScreenState extends State<MainTabScreen> {
 
     return Scaffold(
       body: screens[_currentIndex],
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          border: Border(
-            top: BorderSide(color: Colors.white.withOpacity(0.05)),
-          ),
-        ),
-        child: BottomNavigationBar(
-          currentIndex: _currentIndex,
-          onTap: (index) => setState(() => _currentIndex = index),
-          backgroundColor: const Color(0xFF0B0914),
-          selectedItemColor: const Color(0xFF9D4EDD),
-          unselectedItemColor: Colors.white38,
-          selectedLabelStyle: GoogleFonts.outfit(
-            fontWeight: FontWeight.bold,
-            fontSize: 12,
-          ),
-          unselectedLabelStyle: GoogleFonts.outfit(
-            fontWeight: FontWeight.normal,
-            fontSize: 12,
-          ),
-          items: const [
-            BottomNavigationBarItem(
-              icon: Icon(Icons.grid_view_rounded),
-              label: 'Discover',
+      bottomNavigationBar: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const AdBanner(),
+          Container(
+            decoration: BoxDecoration(
+              border: Border(
+                top: BorderSide(color: Colors.white.withOpacity(0.05)),
+              ),
             ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.save_rounded),
-              label: 'Saved',
+            child: BottomNavigationBar(
+              currentIndex: _currentIndex,
+              onTap: (index) => setState(() => _currentIndex = index),
+              backgroundColor: const Color(0xFF0B0914),
+              selectedItemColor: const Color(0xFF9D4EDD),
+              unselectedItemColor: Colors.white38,
+              selectedLabelStyle: GoogleFonts.outfit(
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+              ),
+              unselectedLabelStyle: GoogleFonts.outfit(
+                fontWeight: FontWeight.normal,
+                fontSize: 12,
+              ),
+              items: const [
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.grid_view_rounded),
+                  label: 'Discover',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.save_rounded),
+                  label: 'Saved',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.settings_input_component_rounded),
+                  label: 'My Console',
+                ),
+              ],
             ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.settings_input_component_rounded),
-              label: 'My Console',
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -379,20 +604,73 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
   String _searchQuery = '';
   String _selectedCategory = 'All';
 
+  List<HomebrewGame> _games = fallbackGames;
   final Map<String, double> _downloadProgress = {};
   final Set<String> _downloadedGames = {};
   bool _isLoadingSaved = true;
+  bool _isLoadingGames = true;
+  String? _gamesError;
 
   @override
   void initState() {
     super.initState();
-    _loadDownloadedGames();
+    _loadInitialData();
   }
 
   @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadInitialData() async {
+    await _loadRemoteGames();
+    await _loadDownloadedGames();
+  }
+
+  Future<void> _loadRemoteGames() async {
+    try {
+      final client = HttpClient();
+      final request = await client.getUrl(
+        Uri.parse('$_apiBaseUrl/api/app/home'),
+      );
+      final response = await request.close();
+      final body = await response.transform(utf8.decoder).join();
+
+      if (response.statusCode != 200) {
+        throw Exception('Server returned code ${response.statusCode}');
+      }
+
+      final payload = jsonDecode(body) as Map<String, dynamic>;
+      final rawItems = <dynamic>[
+        ...((payload['featured'] as List<dynamic>?) ?? const []),
+        ...((payload['games'] as List<dynamic>?) ?? const []),
+      ];
+      final seenTitles = <String>{};
+      final remoteGames = rawItems
+          .whereType<Map<String, dynamic>>()
+          .map(HomebrewGame.fromApiJson)
+          .where((game) => seenTitles.add(game.title))
+          .toList();
+
+      if (remoteGames.isEmpty) {
+        throw Exception('No games returned from API');
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _games = remoteGames;
+        _gamesError = null;
+        _isLoadingGames = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _games = fallbackGames;
+        _gamesError = 'Using offline game list';
+        _isLoadingGames = false;
+      });
+    }
   }
 
   Future<void> _loadDownloadedGames() async {
@@ -404,7 +682,7 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
       // Verify files actually exist on disk
       final Set<String> verifiedList = {};
       for (final title in savedList) {
-        final game = legalGames.firstWhere(
+        final game = _games.firstWhere(
           (g) => g.title == title,
           orElse: () => const HomebrewGame(
             title: '',
@@ -510,6 +788,7 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
           _downloadProgress.remove(title);
           _downloadedGames.add(title);
         });
+        AdService.instance.markDownloadCompleted();
 
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -580,13 +859,11 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
     // Categories List
     final List<String> categories = [
       'All',
-      'Adventure',
-      'Puzzle',
-      'Platformer',
+      ..._games.map((game) => game.category).toSet(),
     ];
 
     // Filter games
-    final filteredGames = legalGames.where((game) {
+    final filteredGames = _games.where((game) {
       final matchesSearch =
           game.title.toLowerCase().contains(_searchQuery.toLowerCase()) ||
           game.developer.toLowerCase().contains(_searchQuery.toLowerCase()) ||
@@ -620,7 +897,7 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'RETRO HUB',
+                        'GBAGAME',
                         style: GoogleFonts.outfit(
                           fontSize: 28,
                           fontWeight: FontWeight.w900,
@@ -630,7 +907,7 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '100% Free & Legal Homebrew Games',
+                        'Free GBA Emulator & Games on Google Play',
                         style: GoogleFonts.jetBrainsMono(
                           fontSize: 12,
                           color: const Color(0xFF73DB9A),
@@ -767,7 +1044,7 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
 
               // Game lists
               Expanded(
-                child: _isLoadingSaved
+                child: _isLoadingSaved || _isLoadingGames
                     ? const Center(
                         child: CircularProgressIndicator(
                           color: Color(0xFF9D4EDD),
@@ -778,6 +1055,10 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
                     : ListView(
                         physics: const BouncingScrollPhysics(),
                         children: [
+                          if (_gamesError != null) ...[
+                            _buildWarningBanner(_gamesError!),
+                            const SizedBox(height: 16),
+                          ],
                           // Featured Game section
                           if (featuredGame != null && _searchQuery.isEmpty) ...[
                             _buildFeaturedCard(featuredGame),
@@ -805,6 +1086,37 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildWarningBanner(String message) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFCF5A).withOpacity(0.12),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFFFCF5A).withOpacity(0.24)),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.info_outline_rounded,
+            color: Color(0xFFFFCF5A),
+            size: 18,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: GoogleFonts.outfit(
+                color: const Color(0xFFFFCF5A),
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1489,7 +1801,27 @@ class ConsoleConfigScreen extends StatefulWidget {
 
 class _ConsoleConfigScreenState extends State<ConsoleConfigScreen> {
   Future<void> _joinDiscord() async {
-    final url = Uri.parse('https://discord.com');
+    Uri url;
+    try {
+      final client = HttpClient();
+      final request = await client.getUrl(
+        Uri.parse('$_apiBaseUrl/api/discord'),
+      );
+      final response = await request.close();
+      final body = await response.transform(utf8.decoder).join();
+
+      if (response.statusCode != 200) {
+        throw Exception('Server returned code ${response.statusCode}');
+      }
+
+      final payload = jsonDecode(body) as Map<String, dynamic>;
+      url = Uri.parse(
+        payload['discordUrl'] as String? ?? 'https://discord.gg/vSh2kmcR',
+      );
+    } catch (_) {
+      url = Uri.parse('https://discord.gg/vSh2kmcR');
+    }
+
     if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1500,6 +1832,7 @@ class _ConsoleConfigScreenState extends State<ConsoleConfigScreen> {
 
   Future<void> _importGame() async {
     try {
+      await AdService.instance.pauseBannerForExternalUi();
       final result = await FilePicker.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['gba', 'zip', 'gbc', 'gb', 'nes'],
@@ -1565,6 +1898,8 @@ class _ConsoleConfigScreenState extends State<ConsoleConfigScreen> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Error selecting file: $e')));
+    } finally {
+      AdService.instance.resumeBanner();
     }
   }
 
@@ -1704,7 +2039,7 @@ class _ConsoleConfigScreenState extends State<ConsoleConfigScreen> {
             const SizedBox(height: 32),
             _buildActionCard(
               title: 'Join Community',
-              subtitle: 'Connect with other homebrew players on Discord.',
+              subtitle: 'Get updates and legal homebrew recommendations.',
               icon: Icons.discord,
               color: const Color(0xFF5865F2),
               onTap: _joinDiscord,
@@ -2822,7 +3157,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   ),
                   const SizedBox(width: 16),
                   Text(
-                    'How to download games',
+                    'GBAGame - GBA Emulator & Games',
                     style: GoogleFonts.outfit(
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
@@ -2970,7 +3305,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Click on "Join Community" to access our Discord server where you can download and share homebrew games.',
+            'Search "GBAGame", "GBA Emulator", or "GBA Games" on Google Play to find this free app again, get updates, and share it with friends.',
             style: GoogleFonts.outfit(
               fontSize: 16,
               color: Colors.white.withOpacity(0.9),
@@ -2994,7 +3329,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     child: OnboardingCardSim(
                       title: 'Join Community',
                       subtitle:
-                          'Connect with other homebrew players on Discord.',
+                          'Free updates, support, and legal game recommendations.',
                       icon: Icons.discord,
                       color: Color(0xFF5865F2),
                       isHighlighted: true,
@@ -3051,7 +3386,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Select and download your favorite game cartridges from the community channels.',
+            'Discover free GBA homebrew and official demos from the app library. Download only games that are allowed for public distribution.',
             style: GoogleFonts.outfit(
               fontSize: 16,
               color: Colors.white.withOpacity(0.9),
@@ -3206,7 +3541,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Tap "Import & Play" in the app, select your downloaded .gba or .zip game file to start playing!',
+            'Use "Import & Play" to load your own legally obtained .gba or .zip files and turn your phone into a free portable GBA emulator.',
             style: GoogleFonts.outfit(
               fontSize: 16,
               color: Colors.white.withOpacity(0.9),
@@ -3230,7 +3565,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     child: OnboardingCardSim(
                       title: 'Join Community',
                       subtitle:
-                          'Connect with other homebrew players on Discord.',
+                          'Free updates, support, and legal game recommendations.',
                       icon: Icons.discord,
                       color: Color(0xFF5865F2),
                       isFaded: true,

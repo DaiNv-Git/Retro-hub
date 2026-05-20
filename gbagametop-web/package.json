@@ -1,0 +1,14 @@
+{
+  "name": "gbagametop-web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "GBA Game Top website and public API for game downloads.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

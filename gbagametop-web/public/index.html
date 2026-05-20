@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="GBAGame is a mobile app for discovering legal GBA homebrew games and playing your own classic game files."
+    />
+    <title>GBAGame - GBA Game Top</title>
+    <link rel="stylesheet" href="/styles.css?v=3" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="GBA Game Top home">
+        <span class="brand-mark">G</span>
+        <span>
+          <strong>GBA Game Top</strong>
+          <small>gbagametop.shop</small>
+        </span>
+      </a>
+      <nav class="nav">
+        <a
+          href="https://play.google.com/store/search?q=GBAGame&c=apps"
+          target="_blank"
+          rel="noreferrer"
+          >Google Play</a
+        >
+        <a href="#games">Games</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">GBAGame mobile app</p>
+          <h1>Play GBA classics and homebrew easier on your phone.</h1>
+          <p class="hero-text">
+            GBAGame helps players discover legal Game Boy Advance homebrew,
+            import their own game files, and enjoy a clean retro console
+            experience. Search for <strong>GBAGame</strong> on Google Play to
+            install the app.
+          </p>
+          <div class="hero-actions">
+            <a
+              class="button primary"
+              href="https://play.google.com/store/search?q=GBAGame&c=apps"
+              target="_blank"
+              rel="noreferrer"
+              >Find on Google Play</a
+            >
+            <a class="button secondary" href="#games">Browse games</a>
+          </div>
+        </div>
+      </section>
+
+      <section class="toolbar" id="games">
+        <div>
+          <p class="eyebrow">Library</p>
+          <h2>Games ready to download</h2>
+        </div>
+        <label class="search">
+          <span>Search</span>
+          <input
+            id="searchInput"
+            type="search"
+            placeholder="Pokemon, Mario, Zelda..."
+            autocomplete="off"
+          />
+        </label>
+      </section>
+
+      <section id="status" class="status">Loading games...</section>
+      <section id="gameGrid" class="game-grid" aria-live="polite"></section>
+      <div class="load-more-wrap">
+        <button id="loadMoreButton" class="button secondary" type="button">
+          Load more
+        </button>
+      </div>
+    </main>
+
+    <footer class="footer">
+      <span>GBA Game Top</span>
+      <span>Fast GBA downloads</span>
+    </footer>
+
+    <script src="/app.js?v=3" defer></script>
+  </body>
+</html>

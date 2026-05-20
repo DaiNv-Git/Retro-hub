@@ -1,0 +1,54 @@
+[
+  {
+    "id": "anguna",
+    "title": "Anguna: Warriors of Virtue",
+    "link": "https://www.tolberts.net/anguna/",
+    "sourceUrl": "https://www.tolberts.net/anguna/",
+    "downloadUrl": "https://www.tolberts.net/anguna/anguna.zip",
+    "date": "2024-01-01T00:00:00",
+    "thumbnail": "https://www.tolberts.net/anguna/shot1.png",
+    "platform": "Game Boy Advance",
+    "region": "Homebrew",
+    "version": "1.0",
+    "license": "Free/open-source homebrew distributed by the developer"
+  },
+  {
+    "id": "apotris",
+    "title": "Apotris",
+    "link": "https://akouzoukos.com/apotris/downloads",
+    "sourceUrl": "https://akouzoukos.com/apotris/downloads",
+    "downloadUrl": "https://apotrisstorage.blob.core.windows.net/binaries/Apotris-v4.1.0GBA.zip",
+    "date": "2024-01-01T00:00:00",
+    "thumbnail": "https://akouzoukos.com/preview.gif",
+    "platform": "Game Boy Advance",
+    "region": "Homebrew",
+    "version": "4.1.0",
+    "license": "Free homebrew release distributed by the developer"
+  },
+  {
+    "id": "celeste-classic-gba",
+    "title": "Celeste Classic GBA",
+    "link": "https://github.com/JeffRuLz/Celeste-Classic-GBA",
+    "sourceUrl": "https://github.com/JeffRuLz/Celeste-Classic-GBA",
+    "downloadUrl": "https://github.com/JeffRuLz/Celeste-Classic-GBA/releases/download/v1.2/Celeste.Classic.v1.2.Homebrew.gba",
+    "date": "2024-01-01T00:00:00",
+    "thumbnail": "https://raw.githubusercontent.com/JeffRuLz/Celeste-Classic-GBA/master/screen1.png",
+    "platform": "Game Boy Advance",
+    "region": "Homebrew",
+    "version": "1.2",
+    "license": "Open-source homebrew project release"
+  },
+  {
+    "id": "goodboy-galaxy-demo",
+    "title": "Goodboy Galaxy Demo",
+    "link": "https://goodboygalaxy.itch.io/goodboy-galaxy-demo",
+    "sourceUrl": "https://goodboygalaxy.itch.io/goodboy-galaxy-demo",
+    "downloadUrl": "",
+    "date": "2024-01-01T00:00:00",
+    "thumbnail": "https://www.goodboygalaxy.com/screenshots2/ss0_en.png",
+    "platform": "Game Boy Advance",
+    "region": "Official demo",
+    "version": "Chapter Zero",
+    "license": "Official free demo from the developer"
+  }
+]
