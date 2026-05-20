@@ -3,21 +3,24 @@ import 'dart:convert';
 import 'dart:ui';
 import 'dart:io';
 
+import 'package:archive/archive.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:webview_flutter/webview_flutter.dart' hide X509Certificate;
 import 'package:cached_network_image/cached_network_image.dart';
-
-const _emulatorJsDataPath = String.fromEnvironment('EMULATOR_JS_DATA_PATH');
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:path_provider/path_provider.dart';
 
 class MyHttpOverrides extends HttpOverrides {
   @override
   HttpClient createHttpClient(SecurityContext? context) {
     return super.createHttpClient(context)
-      ..badCertificateCallback = (X509Certificate cert, String host, int port) => true;
+      ..badCertificateCallback =
+          (X509Certificate cert, String host, int port) => true;
   }
 }
 
@@ -31,11 +34,15 @@ void main() async {
     ),
   );
 
-  runApp(const RetroHubApp());
+  final prefs = await SharedPreferences.getInstance();
+  final showOnboarding = prefs.getBool('show_onboarding') ?? true;
+
+  runApp(RetroHubApp(showOnboarding: showOnboarding));
 }
 
 class RetroHubApp extends StatelessWidget {
-  const RetroHubApp({super.key});
+  final bool showOnboarding;
+  const RetroHubApp({super.key, required this.showOnboarding});
 
   @override
   Widget build(BuildContext context) {
@@ -49,7 +56,7 @@ class RetroHubApp extends StatelessWidget {
           surface: Color(0xFF151026),
         ),
       ),
-      home: const MainTabScreen(),
+      home: showOnboarding ? const OnboardingScreen() : const MainTabScreen(),
       debugShowCheckedModeBanner: false,
     );
   }
@@ -112,6 +119,11 @@ class HomebrewGame {
   final String description;
   final String coverUrl;
   final String downloadUrl;
+  final String fileName;
+  final String officialPageUrl;
+  final String category;
+  final String fileSize;
+  final double rating;
 
   const HomebrewGame({
     required this.title,
@@ -119,40 +131,83 @@ class HomebrewGame {
     required this.description,
     required this.coverUrl,
     required this.downloadUrl,
+    required this.fileName,
+    required this.officialPageUrl,
+    required this.category,
+    required this.fileSize,
+    required this.rating,
   });
+
+  bool get hasDirectDownload => downloadUrl.isNotEmpty;
+  bool get isZipDownload => fileName.toLowerCase().endsWith('.zip');
+  String get playableFileName {
+    if (!isZipDownload) return fileName;
+    final safeTitle = title
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
+        .replaceAll(RegExp(r'^_|_$'), '');
+    return '$safeTitle.gba';
+  }
 }
 
-// This list contains 100% legal, public domain / homebrew games.
-// You will need to host the actual .gba ROM files on your server and update the 'downloadUrl'.
+// Official free/public GBA homebrew sources only. If a project does not expose
+// a direct public ROM file, the app opens its official page instead.
 final List<HomebrewGame> legalGames = [
   const HomebrewGame(
     title: 'Anguna: Warriors of Virtue',
     developer: 'Bite the Chili Productions',
-    description: 'A top-down fantasy action-RPG featuring multiple dungeons, hidden items, and boss fights. Completely free and open-source.',
-    coverUrl: 'https://placehold.co/500x300/5A189A/FFFFFF.png?text=Anguna:+Warriors+of+Virtue', // Placeholder
-    downloadUrl: 'https://engfordev.top/gbagame/homebrew/anguna.gba', // Example URL
+    description:
+        'A top-down fantasy action-RPG featuring multiple dungeons, hidden items, and boss fights. Completely free and open-source.',
+    coverUrl: 'https://www.tolberts.net/anguna/shot1.png',
+    downloadUrl: 'https://www.tolberts.net/anguna/anguna.zip',
+    fileName: 'anguna.zip',
+    officialPageUrl: 'https://www.tolberts.net/anguna/',
+    category: 'Adventure',
+    fileSize: '714 KB',
+    rating: 4.8,
   ),
   const HomebrewGame(
     title: 'Apotris',
     developer: 'akouzoukos',
-    description: 'A highly polished block puzzle game designed specifically for the GBA. Fast-paced and fully featured.',
-    coverUrl: 'https://placehold.co/500x300/151026/73DB9A.png?text=Apotris', // Placeholder
-    downloadUrl: 'https://engfordev.top/gbagame/homebrew/apotris.gba', // Example URL
+    description:
+        'A highly polished block puzzle game designed specifically for the GBA. Fast-paced and fully featured.',
+    coverUrl: 'https://akouzoukos.com/preview.gif',
+    downloadUrl:
+        'https://apotrisstorage.blob.core.windows.net/binaries/Apotris-v4.1.0GBA.zip',
+    fileName: 'Apotris-v4.1.0GBA.zip',
+    officialPageUrl: 'https://akouzoukos.com/apotris/downloads',
+    category: 'Puzzle',
+    fileSize: '13.8 MB',
+    rating: 4.9,
   ),
   const HomebrewGame(
     title: 'Celeste Classic GBA',
-    developer: 'Lemonhaze',
-    description: 'A faithful port of the original Pico-8 Celeste mountain climbing game to the Game Boy Advance.',
-    coverUrl: 'https://placehold.co/500x300/9D4EDD/FFFFFF.png?text=Celeste+Classic', // Placeholder
-    downloadUrl: 'https://engfordev.top/gbagame/homebrew/celeste.gba', // Example URL
+    developer: 'JeffRuLz',
+    description:
+        'A faithful port of the original Pico-8 Celeste mountain climbing game to the Game Boy Advance.',
+    coverUrl:
+        'https://raw.githubusercontent.com/JeffRuLz/Celeste-Classic-GBA/master/screen1.png',
+    downloadUrl:
+        'https://github.com/JeffRuLz/Celeste-Classic-GBA/releases/download/v1.2/Celeste.Classic.v1.2.Homebrew.gba',
+    fileName: 'Celeste.Classic.v1.2.Homebrew.gba',
+    officialPageUrl: 'https://github.com/JeffRuLz/Celeste-Classic-GBA',
+    category: 'Platformer',
+    fileSize: '5.3 MB',
+    rating: 4.9,
   ),
   const HomebrewGame(
-    title: 'Goodboy Advance',
-    developer: 'Homebrew Community',
-    description: 'An exciting and charming platformer created by indie developers for the retro handheld community.',
-    coverUrl: 'https://placehold.co/500x300/222222/FFFFFF.png?text=Goodboy+Advance', // Placeholder
-    downloadUrl: 'https://engfordev.top/gbagame/homebrew/goodboy.gba', // Example URL
-  )
+    title: 'Goodboy Galaxy Demo',
+    developer: 'Goodboy Galaxy / exelotl',
+    description:
+        'The official free Chapter Zero demo for Game Boy Advance, published by the developers.',
+    coverUrl: 'https://www.goodboygalaxy.com/screenshots2/ss0_en.png',
+    downloadUrl: '',
+    fileName: '',
+    officialPageUrl: 'https://goodboygalaxy.itch.io/goodboy-galaxy-demo',
+    category: 'Platformer',
+    fileSize: 'Free demo',
+    rating: 4.8,
+  ),
 ];
 
 // Global state for theme selection
@@ -183,7 +238,9 @@ class _MainTabScreenState extends State<MainTabScreen> {
       body: _screens[_currentIndex],
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
-          border: Border(top: BorderSide(color: Colors.white.withOpacity(0.05))),
+          border: Border(
+            top: BorderSide(color: Colors.white.withOpacity(0.05)),
+          ),
         ),
         child: BottomNavigationBar(
           currentIndex: _currentIndex,
@@ -191,8 +248,14 @@ class _MainTabScreenState extends State<MainTabScreen> {
           backgroundColor: const Color(0xFF0B0914),
           selectedItemColor: const Color(0xFF9D4EDD),
           unselectedItemColor: Colors.white38,
-          selectedLabelStyle: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 12),
-          unselectedLabelStyle: GoogleFonts.outfit(fontWeight: FontWeight.normal, fontSize: 12),
+          selectedLabelStyle: GoogleFonts.outfit(
+            fontWeight: FontWeight.bold,
+            fontSize: 12,
+          ),
+          unselectedLabelStyle: GoogleFonts.outfit(
+            fontWeight: FontWeight.normal,
+            fontSize: 12,
+          ),
           items: const [
             BottomNavigationBarItem(
               icon: Icon(Icons.grid_view_rounded),
@@ -213,127 +276,856 @@ class _MainTabScreenState extends State<MainTabScreen> {
 // LIBRARY SCREEN (TAB 0)
 // ==========================================
 
-class HomebrewLibraryScreen extends StatelessWidget {
+class HomebrewLibraryScreen extends StatefulWidget {
   const HomebrewLibraryScreen({super.key});
 
   @override
+  State<HomebrewLibraryScreen> createState() => _HomebrewLibraryScreenState();
+}
+
+class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+  String _selectedCategory = 'All';
+
+  final Map<String, double> _downloadProgress = {};
+  final Set<String> _downloadedGames = {};
+  bool _isLoadingSaved = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDownloadedGames();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadDownloadedGames() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedList = prefs.getStringList('downloaded_roms') ?? [];
+      final docDir = await getApplicationDocumentsDirectory();
+
+      // Verify files actually exist on disk
+      final Set<String> verifiedList = {};
+      for (final title in savedList) {
+        final game = legalGames.firstWhere(
+          (g) => g.title == title,
+          orElse: () => const HomebrewGame(
+            title: '',
+            developer: '',
+            description: '',
+            coverUrl: '',
+            downloadUrl: '',
+            fileName: '',
+            officialPageUrl: '',
+            category: '',
+            fileSize: '',
+            rating: 0,
+          ),
+        );
+        if (game.title.isNotEmpty && game.fileName.isNotEmpty) {
+          final localPath = '${docDir.path}/${game.playableFileName}';
+          if (await File(localPath).exists()) {
+            verifiedList.add(title);
+          }
+        }
+      }
+
+      // Save back verified list to prefs
+      await prefs.setStringList('downloaded_roms', verifiedList.toList());
+
+      setState(() {
+        _downloadedGames.addAll(verifiedList);
+        _isLoadingSaved = false;
+      });
+    } catch (e) {
+      setState(() {
+        _isLoadingSaved = false;
+      });
+    }
+  }
+
+  Future<void> _downloadAndPlay(HomebrewGame game) async {
+    if (!game.hasDirectDownload) {
+      await _openOfficialPage(game);
+      return;
+    }
+
+    final title = game.title;
+    final docDir = await getApplicationDocumentsDirectory();
+    final localPath = '${docDir.path}/${game.playableFileName}';
+
+    if (_downloadedGames.contains(title)) {
+      if (await File(localPath).exists()) {
+        // Direct play
+        _playGame(localPath);
+        return;
+      }
+
+      final prefs = await SharedPreferences.getInstance();
+      final savedList = prefs.getStringList('downloaded_roms') ?? [];
+      savedList.remove(title);
+      await prefs.setStringList('downloaded_roms', savedList);
+      setState(() {
+        _downloadedGames.remove(title);
+      });
+    }
+
+    if (_downloadProgress.containsKey(title)) return; // Already downloading
+
+    setState(() {
+      _downloadProgress[title] = 0.0;
+    });
+
+    try {
+      final client = HttpClient();
+      final request = await client.getUrl(Uri.parse(game.downloadUrl));
+      final response = await request.close();
+
+      if (response.statusCode == 200) {
+        final file = File(localPath);
+        final bytes = <int>[];
+        final total = response.contentLength;
+        int received = 0;
+
+        await response.forEach((chunk) {
+          bytes.addAll(chunk);
+          received += chunk.length;
+          setState(() {
+            _downloadProgress[title] = total > 0 ? (received / total) : 0.5;
+          });
+        });
+
+        if (game.isZipDownload) {
+          final gbaBytes = _extractGbaFromZip(bytes);
+          await file.writeAsBytes(gbaBytes);
+        } else {
+          await file.writeAsBytes(bytes);
+        }
+
+        final prefs = await SharedPreferences.getInstance();
+        final savedList = prefs.getStringList('downloaded_roms') ?? [];
+        if (!savedList.contains(title)) {
+          savedList.add(title);
+          await prefs.setStringList('downloaded_roms', savedList);
+        }
+
+        setState(() {
+          _downloadProgress.remove(title);
+          _downloadedGames.add(title);
+        });
+
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('"${game.title}" downloaded and added to console!'),
+            backgroundColor: const Color(0xFF73DB9A),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      } else {
+        throw Exception('Server returned code ${response.statusCode}');
+      }
+    } catch (e) {
+      setState(() {
+        _downloadProgress.remove(title);
+      });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Download failed: $e'),
+          backgroundColor: const Color(0xFFFF5252),
+        ),
+      );
+    }
+  }
+
+  List<int> _extractGbaFromZip(List<int> zipBytes) {
+    final archive = ZipDecoder().decodeBytes(zipBytes);
+    final gbaFile = archive.files.cast<ArchiveFile?>().firstWhere(
+      (file) =>
+          file != null &&
+          file.isFile &&
+          file.name.toLowerCase().endsWith('.gba'),
+      orElse: () => null,
+    );
+
+    if (gbaFile == null) {
+      throw Exception('No .gba file found in downloaded ZIP');
+    }
+
+    return gbaFile.readBytes()!;
+  }
+
+  void _playGame(String romPath) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) =>
+            EmulatorScreen(romPath: romPath, theme: _globalSelectedTheme),
+      ),
+    );
+  }
+
+  Future<void> _openOfficialPage(HomebrewGame game) async {
+    final url = Uri.parse(game.officialPageUrl);
+    if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not open official page for ${game.title}'),
+          backgroundColor: const Color(0xFFFF5252),
+        ),
+      );
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'INDIE LIBRARY',
-              style: GoogleFonts.outfit(
-                fontSize: 28,
-                fontWeight: FontWeight.w900,
-                color: Colors.white,
-                letterSpacing: -0.5,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '100% Free & Legal Homebrew Games',
-              style: GoogleFonts.jetBrainsMono(
-                fontSize: 13,
-                color: const Color(0xFF73DB9A),
-              ),
-            ),
-            const SizedBox(height: 24),
-            Expanded(
-              child: ListView.separated(
-                itemCount: legalGames.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 20),
-                itemBuilder: (context, index) {
-                  final game = legalGames[index];
-                  return Container(
+    // Categories List
+    final List<String> categories = [
+      'All',
+      'Adventure',
+      'Puzzle',
+      'Platformer',
+    ];
+
+    // Filter games
+    final filteredGames = legalGames.where((game) {
+      final matchesSearch =
+          game.title.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+          game.developer.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+          game.description.toLowerCase().contains(_searchQuery.toLowerCase());
+      final matchesCategory =
+          _selectedCategory == 'All' || game.category == _selectedCategory;
+      return matchesSearch && matchesCategory;
+    }).toList();
+
+    // Featured game: Celeste or Anguna (first one that matches selected category, or default first)
+    final HomebrewGame? featuredGame = filteredGames.isNotEmpty
+        ? filteredGames.first
+        : null;
+    final remainingGames = filteredGames.isNotEmpty
+        ? filteredGames.sublist(featuredGame != null ? 1 : 0)
+        : <HomebrewGame>[];
+
+    return Scaffold(
+      backgroundColor: const Color(0xFF0B0914),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header title
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'RETRO HUB',
+                        style: GoogleFonts.outfit(
+                          fontSize: 28,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white,
+                          letterSpacing: -0.5,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '100% Free & Legal Homebrew Games',
+                        style: GoogleFonts.jetBrainsMono(
+                          fontSize: 12,
+                          color: const Color(0xFF73DB9A),
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                  // Animated Console Icon
+                  Container(
+                    padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF1A1525),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: Colors.white.withOpacity(0.05)),
+                      color: const Color(0xFF9D4EDD).withOpacity(0.15),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: const Color(0xFF9D4EDD).withOpacity(0.3),
+                      ),
                     ),
-                    clipBehavior: Clip.antiAlias,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        SizedBox(
-                          height: 140,
-                          child: CachedNetworkImage(
-                            imageUrl: game.coverUrl,
-                            fit: BoxFit.cover,
-                            placeholder: (context, url) => Container(color: const Color(0xFF2A2A2A)),
-                            errorWidget: (context, url, error) => Container(
-                              color: const Color(0xFF2A2A2A),
-                              child: const Icon(Icons.image_not_supported, color: Colors.white24, size: 40),
+                    child: const Icon(
+                      Icons.sports_esports_rounded,
+                      color: Color(0xFF9D4EDD),
+                      size: 24,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+
+              // Glassmorphic Search Bar
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.04),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: Colors.white.withOpacity(0.08)),
+                ),
+                child: TextField(
+                  controller: _searchController,
+                  onChanged: (val) {
+                    setState(() {
+                      _searchQuery = val;
+                    });
+                  },
+                  style: GoogleFonts.outfit(color: Colors.white, fontSize: 15),
+                  decoration: InputDecoration(
+                    prefixIcon: const Icon(
+                      Icons.search_rounded,
+                      color: Colors.white38,
+                    ),
+                    suffixIcon: _searchQuery.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(
+                              Icons.clear_rounded,
+                              color: Colors.white60,
                             ),
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() {
+                                _searchQuery = '';
+                              });
+                            },
+                          )
+                        : null,
+                    hintText: 'Search homebrew games...',
+                    hintStyle: GoogleFonts.outfit(
+                      color: Colors.white38,
+                      fontSize: 15,
+                    ),
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // Category filters
+              SizedBox(
+                height: 38,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: categories.length,
+                  itemBuilder: (context, index) {
+                    final cat = categories[index];
+                    final isSelected = cat == _selectedCategory;
+                    return GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          _selectedCategory = cat;
+                        });
+                      },
+                      child: Container(
+                        margin: const EdgeInsets.only(right: 10),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 18,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? const Color(0xFF9D4EDD)
+                              : Colors.white.withOpacity(0.04),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: isSelected
+                                ? const Color(0xFFC77DFF)
+                                : Colors.white.withOpacity(0.08),
+                          ),
+                          boxShadow: isSelected
+                              ? [
+                                  BoxShadow(
+                                    color: const Color(
+                                      0xFF9D4EDD,
+                                    ).withOpacity(0.3),
+                                    blurRadius: 10,
+                                    spreadRadius: 1,
+                                  ),
+                                ]
+                              : null,
+                        ),
+                        child: Text(
+                          cat,
+                          style: GoogleFonts.outfit(
+                            fontSize: 14,
+                            fontWeight: isSelected
+                                ? FontWeight.bold
+                                : FontWeight.normal,
+                            color: isSelected ? Colors.white : Colors.white70,
                           ),
                         ),
-                        Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                game.title,
-                                style: GoogleFonts.outfit(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white,
-                                ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // Game lists
+              Expanded(
+                child: _isLoadingSaved
+                    ? const Center(
+                        child: CircularProgressIndicator(
+                          color: Color(0xFF9D4EDD),
+                        ),
+                      )
+                    : filteredGames.isEmpty
+                    ? _buildEmptyState()
+                    : ListView(
+                        physics: const BouncingScrollPhysics(),
+                        children: [
+                          // Featured Game section
+                          if (featuredGame != null && _searchQuery.isEmpty) ...[
+                            _buildFeaturedCard(featuredGame),
+                            const SizedBox(height: 24),
+                            Text(
+                              'MORE GAMES',
+                              style: GoogleFonts.jetBrainsMono(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white38,
+                                letterSpacing: 1.0,
                               ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'By ${game.developer}',
-                                style: GoogleFonts.outfit(
-                                  fontSize: 14,
-                                  color: const Color(0xFF9D4EDD),
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                game.description,
-                                style: GoogleFonts.outfit(
-                                  fontSize: 14,
-                                  color: Colors.white60,
-                                  height: 1.4,
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-                              SizedBox(
-                                width: double.infinity,
-                                child: ElevatedButton.icon(
-                                  onPressed: () {
-                                    // You can implement download logic here or direct play
-                                    // For now, we will show a snackbar since URLs are placeholders
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text('Upload ${game.title} ROM to your server first!')),
-                                    );
-                                  },
-                                  icon: const Icon(Icons.cloud_download_rounded, color: Colors.white, size: 20),
-                                  label: Text(
-                                    'GET GAME',
-                                    style: GoogleFonts.outfit(
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFF9D4EDD),
-                                    padding: const EdgeInsets.symmetric(vertical: 12),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                  ),
-                                ),
-                              ),
-                            ],
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+
+                          // Remaining list
+                          ...List.generate(
+                            remainingGames.length,
+                            (idx) => _buildGameListCard(remainingGames[idx]),
                           ),
+                        ],
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(
+            Icons.sports_esports_outlined,
+            color: Colors.white24,
+            size: 64,
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'No games found',
+            style: GoogleFonts.outfit(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.white70,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Try adjusting your search query or filters',
+            style: GoogleFonts.outfit(fontSize: 14, color: Colors.white38),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFeaturedCard(HomebrewGame game) {
+    final title = game.title;
+    final isDownloaded = _downloadedGames.contains(title);
+    final isDownloading = _downloadProgress.containsKey(title);
+    final progress = _downloadProgress[title] ?? 0.0;
+
+    return Container(
+      height: 200,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white.withOpacity(0.08)),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF9D4EDD).withOpacity(0.1),
+            blurRadius: 20,
+            spreadRadius: 2,
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        children: [
+          // Background cover image
+          Positioned.fill(
+            child: CachedNetworkImage(
+              imageUrl: game.coverUrl,
+              fit: BoxFit.cover,
+              placeholder: (_, __) => Container(color: const Color(0xFF1E1E1E)),
+              errorWidget: (_, __, ___) =>
+                  Container(color: const Color(0xFF1E1E1E)),
+            ),
+          ),
+          // Dark Gradient overlay
+          Positioned.fill(
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Colors.black.withOpacity(0.1),
+                    Colors.black.withOpacity(0.85),
+                  ],
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                ),
+              ),
+            ),
+          ),
+          // Featured Tag
+          Positioned(
+            top: 16,
+            left: 16,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFF9D4EDD),
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF9D4EDD).withOpacity(0.4),
+                    blurRadius: 8,
+                  ),
+                ],
+              ),
+              child: Text(
+                'FEATURED',
+                style: GoogleFonts.jetBrainsMono(
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ),
+          // Content
+          Positioned(
+            left: 16,
+            right: 16,
+            bottom: 16,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        title,
+                        style: GoogleFonts.outfit(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Text(
+                            game.category,
+                            style: GoogleFonts.outfit(
+                              fontSize: 12,
+                              color: const Color(0xFF73DB9A),
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          const Text(
+                            '•',
+                            style: TextStyle(color: Colors.white38),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            game.fileSize,
+                            style: GoogleFonts.outfit(
+                              fontSize: 12,
+                              color: Colors.white54,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          const Text(
+                            '•',
+                            style: TextStyle(color: Colors.white38),
+                          ),
+                          const SizedBox(width: 8),
+                          const Icon(
+                            Icons.star_rounded,
+                            color: Colors.amber,
+                            size: 14,
+                          ),
+                          const SizedBox(width: 2),
+                          Text(
+                            game.rating.toString(),
+                            style: GoogleFonts.outfit(
+                              fontSize: 12,
+                              color: Colors.white70,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+
+                // Direct play or download
+                _buildActionButton(
+                  game,
+                  isDownloaded,
+                  isDownloading,
+                  progress,
+                  isFeatured: true,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGameListCard(HomebrewGame game) {
+    final title = game.title;
+    final isDownloaded = _downloadedGames.contains(title);
+    final isDownloading = _downloadProgress.containsKey(title);
+    final progress = _downloadProgress[title] ?? 0.0;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.04),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withOpacity(0.06)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Cover Image
+            Container(
+              width: 100,
+              height: 100,
+              decoration: BoxDecoration(
+                border: Border(
+                  right: BorderSide(color: Colors.white.withOpacity(0.04)),
+                ),
+              ),
+              child: CachedNetworkImage(
+                imageUrl: game.coverUrl,
+                fit: BoxFit.cover,
+                placeholder: (_, __) =>
+                    Container(color: const Color(0xFF1E1E1E)),
+                errorWidget: (_, __, ___) =>
+                    Container(color: const Color(0xFF1E1E1E)),
+              ),
+            ),
+
+            // Text info
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(12.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: GoogleFonts.outfit(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'By ${game.developer}',
+                      style: GoogleFonts.outfit(
+                        fontSize: 12,
+                        color: const Color(0xFF9D4EDD),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      game.description,
+                      style: GoogleFonts.outfit(
+                        fontSize: 12,
+                        color: Colors.white54,
+                        height: 1.3,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const Spacer(),
+                    const SizedBox(height: 8),
+                    // Metadata & Action row
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(
+                                  0xFF73DB9A,
+                                ).withOpacity(0.12),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                game.category.toUpperCase(),
+                                style: GoogleFonts.jetBrainsMono(
+                                  fontSize: 8,
+                                  fontWeight: FontWeight.bold,
+                                  color: const Color(0xFF73DB9A),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              game.fileSize,
+                              style: GoogleFonts.outfit(
+                                fontSize: 11,
+                                color: Colors.white38,
+                              ),
+                            ),
+                          ],
+                        ),
+                        // Download/Play button
+                        _buildActionButton(
+                          game,
+                          isDownloaded,
+                          isDownloading,
+                          progress,
+                          isFeatured: false,
                         ),
                       ],
                     ),
-                  );
-                },
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionButton(
+    HomebrewGame game,
+    bool isDownloaded,
+    bool isDownloading,
+    double progress, {
+    required bool isFeatured,
+  }) {
+    if (isDownloading) {
+      return Container(
+        width: isFeatured ? 80 : 70,
+        height: 36,
+        alignment: Alignment.center,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(
+                value: progress,
+                strokeWidth: 2,
+                color: isFeatured ? Colors.white : const Color(0xFF9D4EDD),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '${(progress * 100).toInt()}%',
+              style: GoogleFonts.jetBrainsMono(
+                fontSize: 9,
+                color: isFeatured ? Colors.white70 : const Color(0xFF9D4EDD),
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final bool opensOfficialPage = !game.hasDirectDownload && !isDownloaded;
+    final Color buttonColor = isDownloaded
+        ? const Color(0xFF73DB9A)
+        : (isFeatured ? Colors.white : const Color(0xFF9D4EDD));
+    final Color textColor = isDownloaded
+        ? Colors.black
+        : (isFeatured ? Colors.black : Colors.white);
+    final String label = isDownloaded
+        ? 'PLAY'
+        : (opensOfficialPage ? 'OPEN' : 'GET');
+    final IconData icon = isDownloaded
+        ? Icons.play_arrow_rounded
+        : (opensOfficialPage
+              ? Icons.open_in_new_rounded
+              : Icons.cloud_download_rounded);
+
+    return GestureDetector(
+      onTap: () => _downloadAndPlay(game),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: EdgeInsets.symmetric(
+          horizontal: isFeatured ? 16 : 12,
+          vertical: isFeatured ? 8 : 6,
+        ),
+        decoration: BoxDecoration(
+          color: buttonColor,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: isFeatured
+              ? [
+                  BoxShadow(
+                    color: buttonColor.withOpacity(0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
+              : null,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: textColor, size: isFeatured ? 16 : 14),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: GoogleFonts.outfit(
+                fontSize: isFeatured ? 13 : 11,
+                fontWeight: FontWeight.w900,
+                color: textColor,
               ),
             ),
           ],
@@ -384,9 +1176,9 @@ class _ConsoleConfigScreenState extends State<ConsoleConfigScreen> {
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error selecting file: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error selecting file: $e')));
     }
   }
 
@@ -423,72 +1215,24 @@ class _ConsoleConfigScreenState extends State<ConsoleConfigScreen> {
               color: const Color(0xFF73DB9A),
               onTap: _importGame,
             ),
-            const SizedBox(height: 48),
-            Text(
-              'GAME THEME',
-              style: GoogleFonts.jetBrainsMono(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 2,
-                color: Colors.white54,
-              ),
-            ),
             const SizedBox(height: 16),
-            Expanded(
-              child: ListView.separated(
-                itemCount: availableThemes.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 12),
-                itemBuilder: (context, index) {
-                  final theme = availableThemes[index];
-                  final isSelected = _globalSelectedTheme.id == theme.id;
-                  return GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        _globalSelectedTheme = theme;
-                      });
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: isSelected ? const Color(0xFF9D4EDD).withOpacity(0.2) : const Color(0xFF1E1E1E),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: isSelected ? const Color(0xFF9D4EDD) : const Color(0xFF333333),
-                          width: 2,
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 24,
-                            height: 24,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: isSelected ? const Color(0xFF9D4EDD) : Colors.transparent,
-                              border: Border.all(
-                                color: isSelected ? const Color(0xFF9D4EDD) : Colors.white54,
-                                width: 2,
-                              ),
-                            ),
-                            child: isSelected
-                                ? const Icon(Icons.check, size: 16, color: Colors.white)
-                                : null,
-                          ),
-                          const SizedBox(width: 16),
-                          Text(
-                            theme.name,
-                            style: GoogleFonts.outfit(
-                              fontSize: 16,
-                              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                              color: isSelected ? Colors.white : Colors.white70,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
+            _buildActionCard(
+              title: 'Reset Tutorial',
+              subtitle:
+                  'Show the onboarding slides next time you open the app.',
+              icon: Icons.refresh_rounded,
+              color: const Color(0xFFFF5252),
+              onTap: () async {
+                final prefs = await SharedPreferences.getInstance();
+                await prefs.setBool('show_onboarding', true);
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Tutorial reset! Please restart the app.'),
+                    backgroundColor: Color(0xFFFF5252),
+                  ),
+                );
+              },
             ),
           ],
         ),
@@ -496,7 +1240,13 @@ class _ConsoleConfigScreenState extends State<ConsoleConfigScreen> {
     );
   }
 
-  Widget _buildActionCard({required String title, required String subtitle, required IconData icon, required Color color, required VoidCallback onTap}) {
+  Widget _buildActionCard({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -540,13 +1290,21 @@ class _ConsoleConfigScreenState extends State<ConsoleConfigScreen> {
                 ],
               ),
             ),
-            Icon(Icons.arrow_forward_ios_rounded, color: color.withOpacity(0.5), size: 16),
+            Icon(
+              Icons.arrow_forward_ios_rounded,
+              color: color.withOpacity(0.5),
+              size: 16,
+            ),
           ],
         ),
       ),
     );
   }
 }
+
+// ==========================================
+// EMULATOR SCREEN
+// ==========================================
 
 // ==========================================
 // EMULATOR SCREEN
@@ -564,52 +1322,223 @@ class EmulatorScreen extends StatefulWidget {
 
 class _EmulatorScreenState extends State<EmulatorScreen> {
   late final WebViewController _controller;
+  HttpServer? _romServer;
   bool _loading = true;
+
+  static const int _inputB = 0;
+  static const int _inputSelect = 2;
+  static const int _inputStart = 3;
+  static const int _inputUp = 4;
+  static const int _inputDown = 5;
+  static const int _inputLeft = 6;
+  static const int _inputRight = 7;
+  static const int _inputA = 8;
+  static const int _inputL = 10;
+  static const int _inputR = 11;
+  static const int _inputQuickSave = 24;
+  static const int _inputQuickLoad = 25;
 
   @override
   void initState() {
     super.initState();
+    final file = File(widget.romPath);
+
     _controller = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(Colors.black)
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onPageFinished: (_) {
-            if (mounted) setState(() => _loading = false);
-          },
-          onWebResourceError: (_) {
-            if (mounted) setState(() => _loading = false);
-          },
-        ),
-      )
-      ..loadHtmlString(_emulatorHtml());
+      ..setJavaScriptMode(JavaScriptMode.unrestricted);
+    _controller.setOnConsoleMessage((message) {
+      debugPrint('EmulatorJS: ${message.level.name}: ${message.message}');
+    });
+
+    if (!Platform.isMacOS) {
+      _controller.setBackgroundColor(Colors.black);
+    }
+
+    _controller.setNavigationDelegate(
+      NavigationDelegate(
+        onPageFinished: (_) {
+          if (mounted) setState(() => _loading = false);
+        },
+        onWebResourceError: (_) {
+          if (mounted) setState(() => _loading = false);
+        },
+        onSslAuthError: (SslAuthError error) {
+          error.proceed();
+        },
+      ),
+    );
+
+    unawaited(_configureAndLoadEmulator(file));
   }
 
-  String _emulatorHtml() {
-    final gameUrl = 'file://${widget.romPath}';
-    final title = widget.romPath.split('/').last;
+  @override
+  void dispose() {
+    unawaited(_romServer?.close(force: true));
+    super.dispose();
+  }
 
-    if (_emulatorJsDataPath.isEmpty) {
-      return '''
-<!doctype html>
-<html>
-<head>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <style>
-    html, body {
-      height: 100%; margin: 0; background: #0D0518; color: #9D4EDD; font-family: sans-serif;
-      display: grid; place-items: center; text-align: center; padding: 24px; box-sizing: border-box;
+  Future<void> _configureAndLoadEmulator(File romFile) async {
+    final platformController = _controller.platform;
+    if (platformController is AndroidWebViewController) {
+      await platformController.setAllowFileAccess(true);
+      await platformController.setAllowContentAccess(true);
+      await platformController.setMixedContentMode(
+        MixedContentMode.alwaysAllow,
+      );
+      await platformController.setMediaPlaybackRequiresUserGesture(false);
     }
-  </style>
-</head>
-<body>
-  <main>
-    <h3>Emulator runtime is not bundled.</h3>
-  </main>
-</body>
-</html>
-''';
-    }
+
+    final server = await _startRomServer(romFile);
+    final baseUrl = 'http://127.0.0.1:${server.port}/';
+    final romUrl = '${baseUrl}rom.gba';
+
+    await _controller.loadHtmlString(_emulatorHtml(romUrl), baseUrl: baseUrl);
+  }
+
+  Future<HttpServer> _startRomServer(File romFile) async {
+    await _romServer?.close(force: true);
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    _romServer = server;
+
+    unawaited(
+      server.forEach((request) async {
+        try {
+          final response = request.response;
+          response.headers
+            ..set(HttpHeaders.accessControlAllowOriginHeader, '*')
+            ..set(HttpHeaders.acceptRangesHeader, 'bytes')
+            ..set(HttpHeaders.cacheControlHeader, 'no-store');
+
+          if (request.method == 'OPTIONS') {
+            response.statusCode = HttpStatus.noContent;
+            await response.close();
+            return;
+          }
+
+          if (request.uri.path == '/rom.gba') {
+            if (!await romFile.exists()) {
+              response.statusCode = HttpStatus.notFound;
+              await response.close();
+              return;
+            }
+
+            final fileLength = await romFile.length();
+            response.headers.contentType = ContentType.binary;
+            response.headers.contentLength = fileLength;
+
+            if (request.method != 'HEAD') {
+              await response.addStream(romFile.openRead());
+            }
+            await response.close();
+          } else if (request.uri.path.startsWith('/emulatorjs/')) {
+            final relativePath = request.uri.path.replaceFirst(
+              '/emulatorjs/',
+              '',
+            );
+            debugPrint('EmulatorJS asset request: $relativePath');
+
+            try {
+              final assetData = await rootBundle.load(
+                'assets/emulatorjs/$relativePath',
+              );
+              final bytes = assetData.buffer.asUint8List(
+                assetData.offsetInBytes,
+                assetData.lengthInBytes,
+              );
+
+              if (relativePath.endsWith('.js')) {
+                response.headers.contentType = ContentType(
+                  'application',
+                  'javascript',
+                  charset: 'utf-8',
+                );
+              } else if (relativePath.endsWith('.css')) {
+                response.headers.contentType = ContentType(
+                  'text',
+                  'css',
+                  charset: 'utf-8',
+                );
+              } else if (relativePath.endsWith('.json')) {
+                response.headers.contentType = ContentType(
+                  'application',
+                  'json',
+                  charset: 'utf-8',
+                );
+              } else if (relativePath.endsWith('.wasm')) {
+                response.headers.contentType = ContentType(
+                  'application',
+                  'wasm',
+                );
+              } else {
+                response.headers.contentType = ContentType.binary;
+              }
+
+              response.headers.contentLength = bytes.length;
+              if (request.method != 'HEAD') {
+                response.add(bytes);
+              }
+              await response.close();
+            } catch (e) {
+              debugPrint(
+                'Asset not found or failed to load: assets/emulatorjs/$relativePath ($e)',
+              );
+              response.statusCode = HttpStatus.notFound;
+              await response.close();
+            }
+          } else {
+            response.statusCode = HttpStatus.notFound;
+            await response.close();
+          }
+        } catch (_) {
+          try {
+            request.response.statusCode = HttpStatus.internalServerError;
+            await request.response.close();
+          } catch (_) {}
+        }
+      }),
+    );
+
+    return server;
+  }
+
+  void _sendInput(int inputValue, bool isPressed) {
+    final value = isPressed ? 1 : 0;
+    _controller.runJavaScript('''
+      (function() {
+        var emulator = window.EJS_emulator;
+        if (!emulator || !emulator.gameManager) return;
+        emulator.gameManager.simulateInput(0, $inputValue, $value);
+      })();
+    ''');
+  }
+
+  void _tapInput(int inputValue) {
+    _sendInput(inputValue, true);
+    Future.delayed(const Duration(milliseconds: 60), () {
+      if (mounted) _sendInput(inputValue, false);
+    });
+  }
+
+  void _triggerSave() {
+    _tapInput(_inputQuickSave);
+  }
+
+  void _triggerLoad() {
+    _tapInput(_inputQuickLoad);
+  }
+
+  void _triggerMenu() {
+    _controller.runJavaScript('''
+      (function() {
+        var emulator = window.EJS_emulator;
+        if (emulator && emulator.menu) emulator.menu.toggle();
+      })();
+    ''');
+  }
+
+  String _emulatorHtml(String romUrl) {
+    final title = widget.romPath.split('/').last;
+    final dataPath = 'emulatorjs/';
+
     return '''
 <!doctype html>
 <html>
@@ -622,30 +1551,68 @@ class _EmulatorScreenState extends State<EmulatorScreen> {
       overflow: hidden; touch-action: none; font-family: 'Courier New', Courier, monospace;
     }
     #game-container { width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; position: relative; }
-    #game { width: 100%; height: 100%; box-shadow: 0 0 30px ${widget.theme.glowColor}; }
+    #game { width: 100vw; height: 100vh; box-shadow: 0 0 30px ${widget.theme.glowColor}; }
+    #status {
+      position: absolute; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center;
+      color: #73DB9A; text-align: center; padding: 20px; background: rgba(0,0,0,0.2); font-size: 13px;
+    }
     .crt-overlay {
       position: absolute; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; z-index: 999;
       ${widget.theme.overlayCss}
+    }
+    .ejs_virtualGamepad_parent,
+    .ejs_virtualGamepad_parent *,
+    .ejs_virtualGamepad_open {
+      display: none !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
     }
   </style>
 </head>
 <body>
   <div id="game-container">
     <div id="game"></div>
+    <div id="status">Loading emulator...</div>
     <div class="crt-overlay"></div>
   </div>
   <script>
+    var statusEl;
+    function setStatus(message, isError) {
+      statusEl = statusEl || document.getElementById('status');
+      if (!statusEl) return;
+      statusEl.textContent = message;
+      statusEl.style.color = isError ? '#FF5252' : '#73DB9A';
+      statusEl.style.display = 'flex';
+    }
+    window.addEventListener('error', function(event) {
+      setStatus('Emulator error: ' + (event.message || 'failed to load asset'), true);
+    });
+    window.addEventListener('unhandledrejection', function(event) {
+      setStatus('Emulator error: ' + (event.reason && event.reason.message ? event.reason.message : event.reason), true);
+    });
+
     window.EJS_player = '#game';
-    window.EJS_core = 'gba';
+    window.EJS_core = 'mgba';
     window.EJS_gameName = ${jsonEncode(title)};
-    window.EJS_gameUrl = ${jsonEncode(gameUrl)};
-    window.EJS_pathtodata = ${jsonEncode(_emulatorJsDataPath)};
+    window.EJS_gameUrl = ${jsonEncode(romUrl)};
+    window.EJS_pathtodata = ${jsonEncode(dataPath)};
     window.EJS_startOnLoaded = true;
     window.EJS_theme = 'dark';
     window.EJS_color = '${widget.theme.glowColor == 'transparent' ? '#000000' : widget.theme.glowColor}';
-    window.EJS_Buttons = { playPause: true, restart: true, mute: true, settings: true, fullscreen: true, saveState: true, loadState: true };
+    window.EJS_Buttons = {};
+    window.EJS_defaultOptions = {
+      'virtual-gamepad': 'disabled',
+      'menu-bar-button': 'hidden'
+    };
+    window.EJS_DEBUG_XX = true; // Load bundled src files instead of missing minified assets.
+    window.EJS_language = "en-US";
+    window.EJS_disableAutoLang = false;
+    window.EJS_onGameStart = function() {
+      statusEl = statusEl || document.getElementById('status');
+      if (statusEl) statusEl.style.display = 'none';
+    };
   </script>
-  <script src="${_emulatorJsDataPath}loader.js"></script>
+  <script src="${dataPath}loader.js"></script>
 </body>
 </html>
 ''';
@@ -654,40 +1621,206 @@ class _EmulatorScreenState extends State<EmulatorScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: const Color(0xFF0B0914),
       body: Stack(
         children: [
-          Positioned.fill(
-            child: SafeArea(
-              bottom: false,
-              child: WebViewWidget(controller: _controller),
-            ),
-          ),
-          Positioned(
-            top: MediaQuery.of(context).padding.top + 16,
-            left: 16,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(16),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.4),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: Colors.white.withOpacity(0.1)),
+          SafeArea(
+            child: Column(
+              children: [
+                // Top header with Back button & Game title
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16.0,
+                    vertical: 8.0,
                   ),
-                  child: IconButton(
-                    icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
-                    onPressed: () => Navigator.pop(context),
+                  child: Row(
+                    children: [
+                      GestureDetector(
+                        onTap: () => Navigator.pop(context),
+                        child: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.05),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: Colors.white.withOpacity(0.1),
+                            ),
+                          ),
+                          child: const Icon(
+                            Icons.arrow_back_rounded,
+                            color: Colors.white,
+                            size: 24,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Text(
+                          widget.romPath
+                              .split('/')
+                              .last
+                              .replaceAll('.gba', '')
+                              .replaceAll('.zip', ''),
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.outfit(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ),
+
+                // Aspect Ratio 3:2 Game screen WebView
+                Container(
+                  decoration: BoxDecoration(
+                    border: Border.symmetric(
+                      horizontal: BorderSide(
+                        color: Colors.white.withOpacity(0.05),
+                        width: 1,
+                      ),
+                    ),
+                  ),
+                  child: AspectRatio(
+                    aspectRatio: 3 / 2,
+                    child: WebViewWidget(controller: _controller),
+                  ),
+                ),
+
+                // Gamepad area taking the remaining space
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24.0,
+                      vertical: 16.0,
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        // Row 1: Save, Load, Menu action buttons
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            GamepadActionButton(
+                              icon: Icons.save_outlined,
+                              label: 'Save',
+                              onTap: _triggerSave,
+                            ),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                GamepadActionButton(
+                                  icon: Icons.unarchive_outlined,
+                                  label: 'Load',
+                                  onTap: _triggerLoad,
+                                ),
+                                const SizedBox(width: 16),
+                                GamepadActionButton(
+                                  icon: Icons.more_vert_rounded,
+                                  onTap: _triggerMenu,
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+
+                        // Row 2: L, SELECT, START, R shoulder & command buttons
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            RectGamepadButton(
+                              label: 'L',
+                              inputValue: _inputL,
+                              onInput: _sendInput,
+                              width: 55,
+                            ),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                RectGamepadButton(
+                                  label: 'SELECT',
+                                  inputValue: _inputSelect,
+                                  onInput: _sendInput,
+                                  width: 80,
+                                ),
+                                const SizedBox(width: 12),
+                                RectGamepadButton(
+                                  label: 'START',
+                                  inputValue: _inputStart,
+                                  onInput: _sendInput,
+                                  width: 80,
+                                ),
+                              ],
+                            ),
+                            RectGamepadButton(
+                              label: 'R',
+                              inputValue: _inputR,
+                              onInput: _sendInput,
+                              width: 55,
+                            ),
+                          ],
+                        ),
+
+                        // Row 3: D-pad (left) & A/B Buttons (right)
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            // D-Pad
+                            DPadWidget(
+                              upInput: _inputUp,
+                              downInput: _inputDown,
+                              leftInput: _inputLeft,
+                              rightInput: _inputRight,
+                              onInput: _sendInput,
+                            ),
+
+                            // A/B Action Buttons Stacked in diagonal layout
+                            SizedBox(
+                              width: 160,
+                              height: 160,
+                              child: Stack(
+                                children: [
+                                  // Button B (Lower Left)
+                                  Positioned(
+                                    bottom: 12,
+                                    left: 8,
+                                    child: GamepadButton(
+                                      label: 'B',
+                                      inputValue: _inputB,
+                                      onInput: _sendInput,
+                                    ),
+                                  ),
+                                  // Button A (Upper Right)
+                                  Positioned(
+                                    top: 12,
+                                    right: 8,
+                                    child: GamepadButton(
+                                      label: 'A',
+                                      inputValue: _inputA,
+                                      onInput: _sendInput,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
+
+          // Initial Loading Indicator Screen
           if (_loading)
             Positioned.fill(
               child: Container(
-                color: Colors.black,
+                color: const Color(0xFF0B0914),
                 child: Center(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -697,14 +1830,27 @@ class _EmulatorScreenState extends State<EmulatorScreen> {
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           color: const Color(0xFF9D4EDD).withOpacity(0.1),
-                          boxShadow: [BoxShadow(color: const Color(0xFF9D4EDD).withOpacity(0.3), blurRadius: 30)],
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF9D4EDD).withOpacity(0.3),
+                              blurRadius: 30,
+                            ),
+                          ],
                         ),
-                        child: const CircularProgressIndicator(color: Color(0xFFD2BBFF), strokeWidth: 3),
+                        child: const CircularProgressIndicator(
+                          color: Color(0xFFD2BBFF),
+                          strokeWidth: 3,
+                        ),
                       ),
                       const SizedBox(height: 24),
                       Text(
                         'BOOTING ROM...',
-                        style: GoogleFonts.outfit(color: const Color(0xFFD2BBFF), fontSize: 16, fontWeight: FontWeight.w800, letterSpacing: 2),
+                        style: GoogleFonts.outfit(
+                          color: const Color(0xFFD2BBFF),
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 2,
+                        ),
                       ),
                     ],
                   ),
@@ -712,6 +1858,1301 @@ class _EmulatorScreenState extends State<EmulatorScreen> {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+// ==========================================
+// GAMEPAD CUSTOM WIDGETS
+// ==========================================
+
+class DPadWidget extends StatefulWidget {
+  final int upInput;
+  final int downInput;
+  final int leftInput;
+  final int rightInput;
+  final void Function(int inputValue, bool isPressed) onInput;
+
+  const DPadWidget({
+    super.key,
+    required this.upInput,
+    required this.downInput,
+    required this.leftInput,
+    required this.rightInput,
+    required this.onInput,
+  });
+
+  @override
+  State<DPadWidget> createState() => _DPadWidgetState();
+}
+
+class _DPadWidgetState extends State<DPadWidget> {
+  String? _activeDirection;
+  static const double _pi = 3.1415926535897932;
+
+  void _updateTouch(Offset localPosition, double size) {
+    final center = Offset(size / 2, size / 2);
+    final direction = localPosition - center;
+
+    if (direction.distance > size / 2 || direction.distance < size * 0.15) {
+      _releaseActive();
+      return;
+    }
+
+    final angle = direction.direction;
+    String newDirection;
+    if (angle >= -_pi / 4 && angle < _pi / 4) {
+      newDirection = 'right';
+    } else if (angle >= _pi / 4 && angle < 3 * _pi / 4) {
+      newDirection = 'down';
+    } else if (angle >= -3 * _pi / 4 && angle < -_pi / 4) {
+      newDirection = 'up';
+    } else {
+      newDirection = 'left';
+    }
+
+    _setActiveDirection(newDirection);
+  }
+
+  void _releaseActive() {
+    _setActiveDirection(null);
+  }
+
+  void _setActiveDirection(String? newDirection) {
+    if (newDirection == _activeDirection) return;
+
+    final previousDirection = _activeDirection;
+    if (previousDirection != null) {
+      widget.onInput(_inputForDirection(previousDirection), false);
+    }
+
+    setState(() => _activeDirection = newDirection);
+
+    if (newDirection != null) {
+      widget.onInput(_inputForDirection(newDirection), true);
+    }
+  }
+
+  int _inputForDirection(String direction) {
+    switch (direction) {
+      case 'up':
+        return widget.upInput;
+      case 'down':
+        return widget.downInput;
+      case 'left':
+        return widget.leftInput;
+      case 'right':
+        return widget.rightInput;
+      default:
+        return widget.upInput;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const size = 160.0;
+    return Listener(
+      behavior: HitTestBehavior.opaque,
+      onPointerDown: (event) => _updateTouch(event.localPosition, size),
+      onPointerMove: (event) => _updateTouch(event.localPosition, size),
+      onPointerUp: (_) => _releaseActive(),
+      onPointerCancel: (_) => _releaseActive(),
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: CustomPaint(
+          painter: _DPadPainter(activeDirection: _activeDirection),
+        ),
+      ),
+    );
+  }
+}
+
+class _DPadPainter extends CustomPainter {
+  final String? activeDirection;
+  _DPadPainter({this.activeDirection});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.width / 2;
+
+    final bgPaint = Paint()
+      ..color = Colors.white.withOpacity(0.06)
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(center, radius, bgPaint);
+
+    final borderPaint = Paint()
+      ..color = Colors.white24
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke;
+    canvas.drawCircle(center, radius, borderPaint);
+
+    final crossWidth = radius * 0.45;
+    final crossLength = radius * 0.85;
+
+    final crossPath = Path();
+    crossPath.moveTo(center.dx - crossWidth / 2, center.dy - crossLength);
+    crossPath.lineTo(center.dx + crossWidth / 2, center.dy - crossLength);
+    crossPath.lineTo(center.dx + crossWidth / 2, center.dy - crossWidth / 2);
+    crossPath.lineTo(center.dx + crossLength, center.dy - crossWidth / 2);
+    crossPath.lineTo(center.dx + crossLength, center.dy + crossWidth / 2);
+    crossPath.lineTo(center.dx + crossWidth / 2, center.dy + crossWidth / 2);
+    crossPath.lineTo(center.dx + crossWidth / 2, center.dy + crossLength);
+    crossPath.lineTo(center.dx - crossWidth / 2, center.dy + crossLength);
+    crossPath.lineTo(center.dx - crossWidth / 2, center.dy + crossWidth / 2);
+    crossPath.lineTo(center.dx - crossLength, center.dy + crossWidth / 2);
+    crossPath.lineTo(center.dx - crossLength, center.dy - crossWidth / 2);
+    crossPath.lineTo(center.dx - crossWidth / 2, center.dy - crossWidth / 2);
+    crossPath.close();
+
+    if (activeDirection != null) {
+      final activePaint = Paint()
+        ..color = Colors.white.withOpacity(0.12)
+        ..style = PaintingStyle.fill;
+
+      final activePath = Path();
+      if (activeDirection == 'up') {
+        activePath.moveTo(center.dx - crossWidth / 2, center.dy - crossLength);
+        activePath.lineTo(center.dx + crossWidth / 2, center.dy - crossLength);
+        activePath.lineTo(center.dx + crossWidth / 2, center.dy);
+        activePath.lineTo(center.dx - crossWidth / 2, center.dy);
+      } else if (activeDirection == 'down') {
+        activePath.moveTo(center.dx - crossWidth / 2, center.dy);
+        activePath.lineTo(center.dx + crossWidth / 2, center.dy);
+        activePath.lineTo(center.dx + crossWidth / 2, center.dy + crossLength);
+        activePath.lineTo(center.dx - crossWidth / 2, center.dy + crossLength);
+      } else if (activeDirection == 'left') {
+        activePath.moveTo(center.dx - crossLength, center.dy - crossWidth / 2);
+        activePath.lineTo(center.dx, center.dy - crossWidth / 2);
+        activePath.lineTo(center.dx, center.dy + crossWidth / 2);
+        activePath.lineTo(center.dx - crossLength, center.dy + crossWidth / 2);
+      } else if (activeDirection == 'right') {
+        activePath.moveTo(center.dx, center.dy - crossWidth / 2);
+        activePath.lineTo(center.dx + crossLength, center.dy - crossWidth / 2);
+        activePath.lineTo(center.dx + crossLength, center.dy + crossWidth / 2);
+        activePath.lineTo(center.dx, center.dy + crossWidth / 2);
+      }
+      activePath.close();
+      canvas.drawPath(activePath, activePaint);
+    }
+
+    canvas.drawPath(crossPath, borderPaint);
+
+    final arrowPaint = Paint()
+      ..color = Colors.white24
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+
+    final upArrow = Path()
+      ..moveTo(center.dx - 6, center.dy - radius + 15)
+      ..lineTo(center.dx, center.dy - radius + 9)
+      ..lineTo(center.dx + 6, center.dy - radius + 15)
+      ..close();
+    canvas.drawPath(upArrow, arrowPaint);
+
+    final downArrow = Path()
+      ..moveTo(center.dx - 6, center.dy + radius - 15)
+      ..lineTo(center.dx, center.dy + radius - 9)
+      ..lineTo(center.dx + 6, center.dy + radius - 15)
+      ..close();
+    canvas.drawPath(downArrow, arrowPaint);
+
+    final leftArrow = Path()
+      ..moveTo(center.dx - radius + 15, center.dy - 6)
+      ..lineTo(center.dx - radius + 9, center.dy)
+      ..lineTo(center.dx - radius + 15, center.dy + 6)
+      ..close();
+    canvas.drawPath(leftArrow, arrowPaint);
+
+    final rightArrow = Path()
+      ..moveTo(center.dx + radius - 15, center.dy - 6)
+      ..lineTo(center.dx + radius - 9, center.dy)
+      ..lineTo(center.dx + radius - 15, center.dy + 6)
+      ..close();
+    canvas.drawPath(rightArrow, arrowPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _DPadPainter oldDelegate) =>
+      oldDelegate.activeDirection != activeDirection;
+}
+
+class GamepadButton extends StatefulWidget {
+  final String label;
+  final int inputValue;
+  final void Function(int inputValue, bool isPressed) onInput;
+  final double size;
+
+  const GamepadButton({
+    super.key,
+    required this.label,
+    required this.inputValue,
+    required this.onInput,
+    this.size = 64.0,
+  });
+
+  @override
+  State<GamepadButton> createState() => _GamepadButtonState();
+}
+
+class _GamepadButtonState extends State<GamepadButton> {
+  bool _isPressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      onPointerDown: (_) {
+        setState(() => _isPressed = true);
+        widget.onInput(widget.inputValue, true);
+      },
+      onPointerUp: (_) {
+        setState(() => _isPressed = false);
+        widget.onInput(widget.inputValue, false);
+      },
+      onPointerCancel: (_) {
+        setState(() => _isPressed = false);
+        widget.onInput(widget.inputValue, false);
+      },
+      child: Container(
+        width: widget.size,
+        height: widget.size,
+        decoration: BoxDecoration(
+          color: _isPressed
+              ? Colors.white.withOpacity(0.25)
+              : Colors.white.withOpacity(0.12),
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white30, width: 2),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          widget.label,
+          style: GoogleFonts.outfit(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: Colors.white.withOpacity(0.9),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class RectGamepadButton extends StatefulWidget {
+  final String label;
+  final int inputValue;
+  final void Function(int inputValue, bool isPressed) onInput;
+  final double width;
+  final double height;
+
+  const RectGamepadButton({
+    super.key,
+    required this.label,
+    required this.inputValue,
+    required this.onInput,
+    this.width = 80,
+    this.height = 40,
+  });
+
+  @override
+  State<RectGamepadButton> createState() => _RectGamepadButtonState();
+}
+
+class _RectGamepadButtonState extends State<RectGamepadButton> {
+  bool _isPressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      onPointerDown: (_) {
+        setState(() => _isPressed = true);
+        widget.onInput(widget.inputValue, true);
+      },
+      onPointerUp: (_) {
+        setState(() => _isPressed = false);
+        widget.onInput(widget.inputValue, false);
+      },
+      onPointerCancel: (_) {
+        setState(() => _isPressed = false);
+        widget.onInput(widget.inputValue, false);
+      },
+      child: Container(
+        width: widget.width,
+        height: widget.height,
+        decoration: BoxDecoration(
+          color: _isPressed
+              ? Colors.white.withOpacity(0.25)
+              : Colors.white.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: Colors.white30, width: 1.5),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          widget.label,
+          style: GoogleFonts.outfit(
+            fontSize: widget.label.length > 2 ? 11 : 14,
+            fontWeight: FontWeight.bold,
+            color: Colors.white.withOpacity(0.9),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class GamepadActionButton extends StatelessWidget {
+  final IconData icon;
+  final String? label;
+  final VoidCallback onTap;
+
+  const GamepadActionButton({
+    super.key,
+    required this.icon,
+    this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 54,
+            height: 54,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.08),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white24, width: 1.5),
+            ),
+            child: Icon(icon, color: Colors.white.withOpacity(0.9), size: 24),
+          ),
+          if (label != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              label!,
+              style: GoogleFonts.outfit(
+                fontSize: 12,
+                color: Colors.white70,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// ==========================================
+// ONBOARDING SCREEN
+// ==========================================
+
+class OnboardingScreen extends StatefulWidget {
+  const OnboardingScreen({super.key});
+
+  @override
+  State<OnboardingScreen> createState() => _OnboardingScreenState();
+}
+
+class _OnboardingScreenState extends State<OnboardingScreen> {
+  final PageController _pageController = PageController();
+  int _currentPage = 0;
+
+  Future<void> _completeOnboarding() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('show_onboarding', false);
+    if (!mounted) return;
+    Navigator.of(
+      context,
+    ).pushReplacement(MaterialPageRoute(builder: (_) => const MainTabScreen()));
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF0B0914),
+      body: SafeArea(
+        child: Column(
+          children: [
+            // Top Bar
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 16.0,
+                vertical: 12.0,
+              ),
+              child: Row(
+                children: [
+                  GestureDetector(
+                    onTap: () {
+                      if (_currentPage > 0) {
+                        _pageController.previousPage(
+                          duration: const Duration(milliseconds: 300),
+                          curve: Curves.easeInOut,
+                        );
+                      }
+                    },
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.05),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: Colors.white.withOpacity(0.1),
+                        ),
+                      ),
+                      child: Icon(
+                        Icons.chevron_left_rounded,
+                        color: _currentPage > 0 ? Colors.white : Colors.white30,
+                        size: 24,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Text(
+                    'How to download games',
+                    style: GoogleFonts.outfit(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Page View Content
+            Expanded(
+              child: PageView(
+                controller: _pageController,
+                onPageChanged: (page) {
+                  setState(() {
+                    _currentPage = page;
+                  });
+                },
+                children: [_buildStep1(), _buildStep2(), _buildStep3()],
+              ),
+            ),
+
+            // Bottom Navigation Area
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 24.0,
+                vertical: 24.0,
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  // Indicators
+                  Row(
+                    children: List.generate(3, (index) {
+                      final isActive = index == _currentPage;
+                      return AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        margin: const EdgeInsets.only(right: 8),
+                        width: isActive ? 24 : 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: isActive ? Colors.white : Colors.white24,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      );
+                    }),
+                  ),
+
+                  // Next / Get Started Button
+                  if (_currentPage < 2)
+                    GestureDetector(
+                      onTap: () {
+                        _pageController.nextPage(
+                          duration: const Duration(milliseconds: 300),
+                          curve: Curves.easeInOut,
+                        );
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 32,
+                          vertical: 14,
+                        ),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF00E676), Color(0xFF00B0FF)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(24),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF00E676).withOpacity(0.3),
+                              blurRadius: 12,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Text(
+                          'Next',
+                          style: GoogleFonts.outfit(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    )
+                  else
+                    GestureDetector(
+                      onTap: _completeOnboarding,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 40,
+                          vertical: 14,
+                        ),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFFFF3D00), Color(0xFFFF9100)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(24),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFFFF3D00).withOpacity(0.4),
+                              blurRadius: 16,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Text(
+                          'Get Started',
+                          style: GoogleFonts.outfit(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w900,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStep1() {
+    return Padding(
+      padding: const EdgeInsets.all(24.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 12),
+          Text(
+            'Step 1',
+            style: GoogleFonts.jetBrainsMono(
+              fontSize: 14,
+              color: const Color(0xFF00E676),
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Click on "Join Community" to access our Discord server where you can download and share homebrew games.',
+            style: GoogleFonts.outfit(
+              fontSize: 16,
+              color: Colors.white.withOpacity(0.9),
+              height: 1.5,
+            ),
+          ),
+          const Spacer(),
+          // Visual simulation
+          Center(
+            child: SizedBox(
+              height: 240,
+              width: 320,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  // Highlighted Join Community Card
+                  const Positioned(
+                    top: 10,
+                    left: 10,
+                    right: 10,
+                    child: OnboardingCardSim(
+                      title: 'Join Community',
+                      subtitle:
+                          'Connect with other homebrew players on Discord.',
+                      icon: Icons.discord,
+                      color: Color(0xFF5865F2),
+                      isHighlighted: true,
+                    ),
+                  ),
+                  // Faded Import & Play Card
+                  const Positioned(
+                    top: 110,
+                    left: 10,
+                    right: 10,
+                    child: OnboardingCardSim(
+                      title: 'Import & Play',
+                      subtitle: 'Load your legally obtained .gba or .zip ROMs.',
+                      icon: Icons.sports_esports_rounded,
+                      color: Color(0xFF73DB9A),
+                      isFaded: true,
+                    ),
+                  ),
+                  // Pointing hand pointing at the Join Community card
+                  Positioned(
+                    top: 55,
+                    right: 25,
+                    child: AnimatedPointer(
+                      child: Transform.rotate(
+                        angle: -0.2,
+                        child: const PointingHand(),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const Spacer(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStep2() {
+    return Padding(
+      padding: const EdgeInsets.all(24.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 12),
+          Text(
+            'Step 2',
+            style: GoogleFonts.jetBrainsMono(
+              fontSize: 14,
+              color: const Color(0xFF00E676),
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Select and download your favorite game cartridges from the community channels.',
+            style: GoogleFonts.outfit(
+              fontSize: 16,
+              color: Colors.white.withOpacity(0.9),
+              height: 1.5,
+            ),
+          ),
+          const Spacer(),
+          // Game cartridges stacked & download button
+          Center(
+            child: SizedBox(
+              height: 280,
+              width: 320,
+              child: Stack(
+                clipBehavior: Clip.none,
+                alignment: Alignment.center,
+                children: [
+                  // Zelda Cartridge (Left)
+                  Positioned(
+                    left: 20,
+                    top: 10,
+                    child: Transform.rotate(
+                      angle: -0.25,
+                      child: RetroCartridge(
+                        title: 'ZELDA',
+                        consoleText: 'GAME BOY ADVANCE',
+                        gradientColors: const [
+                          Color(0xFF004D40),
+                          Color(0xFF00C853),
+                        ],
+                        child: Icon(
+                          Icons.shield_rounded,
+                          color: Colors.yellow.shade700,
+                          size: 36,
+                        ),
+                      ),
+                    ),
+                  ),
+                  // Tekken Cartridge (Right)
+                  Positioned(
+                    right: 20,
+                    top: 15,
+                    child: Transform.rotate(
+                      angle: 0.22,
+                      child: const RetroCartridge(
+                        title: 'FIGHTERS',
+                        consoleText: 'GAME BOY ADVANCE',
+                        gradientColors: [Color(0xFFB71C1C), Color(0xFFE53935)],
+                        child: Icon(
+                          Icons.flash_on_rounded,
+                          color: Colors.amber,
+                          size: 36,
+                        ),
+                      ),
+                    ),
+                  ),
+                  // Pokemon Cartridge (Center)
+                  Positioned(
+                    top: 5,
+                    child: Transform.rotate(
+                      angle: -0.05,
+                      child: RetroCartridge(
+                        title: 'MONSTERS',
+                        consoleText: 'GAME BOY ADVANCE',
+                        gradientColors: const [
+                          Color(0xFFFF6D00),
+                          Color(0xFFFFD600),
+                        ],
+                        child: Icon(
+                          Icons.bolt_rounded,
+                          color: Colors.blue.shade900,
+                          size: 40,
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // Download button simulating the website action
+                  Positioned(
+                    bottom: 20,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 12,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF007AFF),
+                        borderRadius: BorderRadius.circular(30),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF007AFF).withOpacity(0.4),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'Download Games',
+                            style: GoogleFonts.outfit(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          const Icon(
+                            Icons.download_rounded,
+                            color: Colors.white,
+                            size: 18,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  // Pointing hand pointing at the Download Games button
+                  Positioned(
+                    bottom: 0,
+                    right: 40,
+                    child: AnimatedPointer(
+                      child: Transform.rotate(
+                        angle: -0.1,
+                        child: const PointingHand(),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const Spacer(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStep3() {
+    return Padding(
+      padding: const EdgeInsets.all(24.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 12),
+          Text(
+            'Step 3',
+            style: GoogleFonts.jetBrainsMono(
+              fontSize: 14,
+              color: const Color(0xFF00E676),
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Tap "Import & Play" in the app, select your downloaded .gba or .zip game file to start playing!',
+            style: GoogleFonts.outfit(
+              fontSize: 16,
+              color: Colors.white.withOpacity(0.9),
+              height: 1.5,
+            ),
+          ),
+          const Spacer(),
+          // Simulator visualization
+          Center(
+            child: SizedBox(
+              height: 240,
+              width: 320,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  // Faded Join Community Card
+                  const Positioned(
+                    top: 10,
+                    left: 10,
+                    right: 10,
+                    child: OnboardingCardSim(
+                      title: 'Join Community',
+                      subtitle:
+                          'Connect with other homebrew players on Discord.',
+                      icon: Icons.discord,
+                      color: Color(0xFF5865F2),
+                      isFaded: true,
+                    ),
+                  ),
+                  // Highlighted Import & Play Card
+                  const Positioned(
+                    top: 110,
+                    left: 10,
+                    right: 10,
+                    child: OnboardingCardSim(
+                      title: 'Import & Play',
+                      subtitle: 'Load your legally obtained .gba or .zip ROMs.',
+                      icon: Icons.sports_esports_rounded,
+                      color: Color(0xFF73DB9A),
+                      isHighlighted: true,
+                    ),
+                  ),
+                  // Pointing hand pointing at the Import & Play card
+                  Positioned(
+                    top: 155,
+                    right: 25,
+                    child: AnimatedPointer(
+                      child: Transform.rotate(
+                        angle: -0.2,
+                        child: const PointingHand(),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const Spacer(),
+        ],
+      ),
+    );
+  }
+}
+
+// ==========================================
+// ONBOARDING HELPERS / CUSTOM PAINTERS
+// ==========================================
+
+class PointingHand extends StatelessWidget {
+  const PointingHand({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 48,
+      height: 56,
+      child: CustomPaint(painter: _PointingHandPainter()),
+    );
+  }
+}
+
+class _PointingHandPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
+
+    final borderPaint = Paint()
+      ..color = const Color(0xFF1E1035)
+      ..strokeWidth = 2.5
+      ..style = PaintingStyle.stroke;
+
+    final cuffPaint = Paint()
+      ..color =
+          const Color(0xFF007AFF) // blue cuff
+      ..style = PaintingStyle.fill;
+
+    // Draw blue sleeve/cuff at the bottom
+    final cuffRect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(
+        size.width * 0.2,
+        size.height * 0.7,
+        size.width * 0.6,
+        size.height * 0.25,
+      ),
+      const Radius.circular(4),
+    );
+    canvas.drawRRect(cuffRect, cuffPaint);
+    canvas.drawRRect(cuffRect, borderPaint);
+
+    // Draw white hand body and pointing finger
+    final handPath = Path();
+    handPath.moveTo(
+      size.width * 0.35,
+      size.height * 0.7,
+    ); // connection to cuff left
+    handPath.lineTo(size.width * 0.25, size.height * 0.45); // palm side left
+    handPath.quadraticBezierTo(
+      size.width * 0.23,
+      size.height * 0.4,
+      size.width * 0.28,
+      size.height * 0.38,
+    ); // tip of folded thumb
+    handPath.lineTo(size.width * 0.35, size.height * 0.42); // thumb fold
+
+    // Index finger (pointing)
+    handPath.lineTo(size.width * 0.35, size.height * 0.1);
+    handPath.quadraticBezierTo(
+      size.width * 0.38,
+      size.height * 0.03,
+      size.width * 0.46,
+      size.height * 0.1,
+    ); // tip of index finger
+    handPath.lineTo(size.width * 0.5, size.height * 0.4); // knuckle side
+
+    // Other fingers (folded)
+    // Middle
+    handPath.quadraticBezierTo(
+      size.width * 0.53,
+      size.height * 0.38,
+      size.width * 0.56,
+      size.height * 0.42,
+    );
+    handPath.quadraticBezierTo(
+      size.width * 0.62,
+      size.height * 0.44,
+      size.width * 0.58,
+      size.height * 0.52,
+    );
+    // Ring
+    handPath.quadraticBezierTo(
+      size.width * 0.63,
+      size.height * 0.5,
+      size.width * 0.66,
+      size.height * 0.54,
+    );
+    handPath.quadraticBezierTo(
+      size.width * 0.7,
+      size.height * 0.56,
+      size.width * 0.63,
+      size.height * 0.63,
+    );
+    // Pinky
+    handPath.quadraticBezierTo(
+      size.width * 0.67,
+      size.height * 0.61,
+      size.width * 0.68,
+      size.height * 0.65,
+    );
+    handPath.quadraticBezierTo(
+      size.width * 0.7,
+      size.height * 0.68,
+      size.width * 0.6,
+      size.height * 0.7,
+    ); // bottom palm right
+
+    handPath.close();
+
+    // Draw shadow
+    canvas.drawPath(
+      handPath.shift(const Offset(2, 2)),
+      Paint()
+        ..color = Colors.black.withOpacity(0.2)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2),
+    );
+
+    // Draw hand
+    canvas.drawPath(handPath, paint);
+    canvas.drawPath(handPath, borderPaint);
+
+    // Draw some subtle line separation for folded fingers
+    final fingerLine1 = Path();
+    fingerLine1.moveTo(size.width * 0.46, size.height * 0.44);
+    fingerLine1.lineTo(size.width * 0.56, size.height * 0.46);
+    canvas.drawPath(fingerLine1, borderPaint);
+
+    final fingerLine2 = Path();
+    fingerLine2.moveTo(size.width * 0.48, size.height * 0.53);
+    fingerLine2.lineTo(size.width * 0.6, size.height * 0.55);
+    canvas.drawPath(fingerLine2, borderPaint);
+
+    final fingerLine3 = Path();
+    fingerLine3.moveTo(size.width * 0.48, size.height * 0.62);
+    fingerLine3.lineTo(size.width * 0.62, size.height * 0.64);
+    canvas.drawPath(fingerLine3, borderPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class AnimatedPointer extends StatefulWidget {
+  final Widget child;
+  const AnimatedPointer({super.key, required this.child});
+
+  @override
+  State<AnimatedPointer> createState() => _AnimatedPointerState();
+}
+
+class _AnimatedPointerState extends State<AnimatedPointer>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<Offset> _offsetAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 800),
+      vsync: this,
+    )..repeat(reverse: true);
+
+    _offsetAnimation = Tween<Offset>(
+      begin: Offset.zero,
+      end: const Offset(-0.15, -0.15), // bounce up-left
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SlideTransition(position: _offsetAnimation, child: widget.child);
+  }
+}
+
+class RetroCartridge extends StatelessWidget {
+  final String title;
+  final String consoleText;
+  final List<Color> gradientColors;
+  final Widget child;
+
+  const RetroCartridge({
+    super.key,
+    required this.title,
+    required this.consoleText,
+    required this.gradientColors,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 105,
+      height: 135,
+      decoration: BoxDecoration(
+        color: const Color(0xFF2A2A2A),
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(8),
+          topRight: Radius.circular(8),
+          bottomLeft: Radius.circular(4),
+          bottomRight: Radius.circular(4),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.4),
+            blurRadius: 8,
+            offset: const Offset(2, 4),
+          ),
+        ],
+        border: Border.all(color: Colors.white.withOpacity(0.08), width: 1.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // GBA cartridge top indent
+          Container(
+            height: 14,
+            alignment: Alignment.center,
+            decoration: const BoxDecoration(
+              color: Color(0xFF1E1E1E),
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(6),
+                topRight: Radius.circular(6),
+              ),
+            ),
+            child: Text(
+              consoleText,
+              style: GoogleFonts.outfit(
+                fontSize: 6,
+                color: Colors.white30,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ),
+          // Cartridge body / Sticker area
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.all(6.0),
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: gradientColors,
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: Colors.white.withOpacity(0.1)),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                        child: FittedBox(fit: BoxFit.scaleDown, child: child),
+                      ),
+                    ),
+                    Container(
+                      color: Colors.black.withOpacity(0.6),
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 2.0),
+                      child: Text(
+                        title,
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.jetBrainsMono(
+                          fontSize: 8,
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          // Cartridge bottom slot (just visual detail)
+          Container(height: 6, color: const Color(0xFF121212)),
+        ],
+      ),
+    );
+  }
+}
+
+class OnboardingCardSim extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final Color color;
+  final bool isHighlighted;
+  final bool isFaded;
+
+  const OnboardingCardSim({
+    super.key,
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.color,
+    this.isHighlighted = false,
+    this.isFaded = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final opacity = isFaded ? 0.35 : 1.0;
+    return Opacity(
+      opacity: opacity,
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: color.withOpacity(isHighlighted ? 0.22 : 0.15),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isHighlighted
+                ? const Color(0xFF00E676)
+                : color.withOpacity(0.3),
+            width: isHighlighted ? 2 : 1,
+          ),
+          boxShadow: isHighlighted
+              ? [
+                  BoxShadow(
+                    color: const Color(0xFF00E676).withOpacity(0.2),
+                    blurRadius: 16,
+                    spreadRadius: 2,
+                  ),
+                ]
+              : null,
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.2),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: color, size: 28),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: GoogleFonts.outfit(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: GoogleFonts.outfit(
+                      fontSize: 13,
+                      color: Colors.white70,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              Icons.arrow_forward_ios_rounded,
+              color: isHighlighted
+                  ? const Color(0xFF00E676)
+                  : color.withOpacity(0.5),
+              size: 16,
+            ),
+          ],
+        ),
       ),
     );
   }
