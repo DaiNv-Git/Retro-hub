@@ -150,6 +150,85 @@ class HomebrewGame {
   }
 }
 
+class ImportedGame {
+  final String id;
+  final String title;
+  final String path;
+  final String fileName;
+  final int fileSize;
+  final String importedAt;
+
+  const ImportedGame({
+    required this.id,
+    required this.title,
+    required this.path,
+    required this.fileName,
+    required this.fileSize,
+    required this.importedAt,
+  });
+
+  factory ImportedGame.fromJson(Map<String, dynamic> json) {
+    return ImportedGame(
+      id: json['id'] as String? ?? '',
+      title: json['title'] as String? ?? 'Imported game',
+      path: json['path'] as String? ?? '',
+      fileName: json['fileName'] as String? ?? '',
+      fileSize: json['fileSize'] as int? ?? 0,
+      importedAt: json['importedAt'] as String? ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'title': title,
+      'path': path,
+      'fileName': fileName,
+      'fileSize': fileSize,
+      'importedAt': importedAt,
+    };
+  }
+}
+
+class ImportGameOptions {
+  final String title;
+  final bool saveToLibrary;
+
+  const ImportGameOptions({required this.title, required this.saveToLibrary});
+}
+
+const String _importedGamesPrefsKey = 'imported_games';
+
+String _cleanGameTitle(String fileName) {
+  final dotIndex = fileName.lastIndexOf('.');
+  final rawTitle = dotIndex > 0 ? fileName.substring(0, dotIndex) : fileName;
+  final spaced = rawTitle.replaceAll(RegExp(r'[_\-]+'), ' ').trim();
+  if (spaced.isEmpty) return 'Imported game';
+  return spaced
+      .split(RegExp(r'\s+'))
+      .map(
+        (word) => word.isEmpty
+            ? word
+            : '${word[0].toUpperCase()}${word.length > 1 ? word.substring(1) : ''}',
+      )
+      .join(' ');
+}
+
+String _safeFileName(String fileName) {
+  final fallback = 'imported_game.gba';
+  final safe = fileName.replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '_');
+  return safe.isEmpty ? fallback : safe;
+}
+
+String _formatFileSize(int bytes) {
+  if (bytes <= 0) return 'Unknown size';
+  const kb = 1024;
+  const mb = kb * 1024;
+  if (bytes >= mb) return '${(bytes / mb).toStringAsFixed(1)} MB';
+  if (bytes >= kb) return '${(bytes / kb).toStringAsFixed(1)} KB';
+  return '$bytes B';
+}
+
 // Official free/public GBA homebrew sources only. If a project does not expose
 // a direct public ROM file, the app opens its official page instead.
 final List<HomebrewGame> legalGames = [
@@ -226,16 +305,24 @@ class MainTabScreen extends StatefulWidget {
 
 class _MainTabScreenState extends State<MainTabScreen> {
   int _currentIndex = 0;
-
-  final List<Widget> _screens = [
-    const HomebrewLibraryScreen(),
-    const ConsoleConfigScreen(),
-  ];
+  int _importedGamesVersion = 0;
 
   @override
   Widget build(BuildContext context) {
+    final screens = [
+      const HomebrewLibraryScreen(),
+      ImportedGamesScreen(key: ValueKey(_importedGamesVersion)),
+      ConsoleConfigScreen(
+        onGameImported: () {
+          setState(() {
+            _importedGamesVersion++;
+          });
+        },
+      ),
+    ];
+
     return Scaffold(
-      body: _screens[_currentIndex],
+      body: screens[_currentIndex],
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           border: Border(
@@ -259,7 +346,11 @@ class _MainTabScreenState extends State<MainTabScreen> {
           items: const [
             BottomNavigationBarItem(
               icon: Icon(Icons.grid_view_rounded),
-              label: 'Library',
+              label: 'Discover',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.save_rounded),
+              label: 'Saved',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.settings_input_component_rounded),
@@ -1136,11 +1227,261 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
 }
 
 // ==========================================
-// CONSOLE CONFIG SCREEN (TAB 1)
+// IMPORTED GAMES SCREEN (TAB 1)
+// ==========================================
+
+class ImportedGamesScreen extends StatefulWidget {
+  const ImportedGamesScreen({super.key});
+
+  @override
+  State<ImportedGamesScreen> createState() => _ImportedGamesScreenState();
+}
+
+class _ImportedGamesScreenState extends State<ImportedGamesScreen> {
+  List<ImportedGame> _games = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadImportedGames();
+  }
+
+  Future<void> _loadImportedGames() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getStringList(_importedGamesPrefsKey) ?? [];
+    final verifiedGames = <ImportedGame>[];
+
+    for (final item in saved) {
+      try {
+        final game = ImportedGame.fromJson(
+          jsonDecode(item) as Map<String, dynamic>,
+        );
+        if (game.path.isNotEmpty && await File(game.path).exists()) {
+          verifiedGames.add(game);
+        }
+      } catch (_) {
+        // Skip stale entries from older builds or interrupted writes.
+      }
+    }
+
+    if (verifiedGames.length != saved.length) {
+      await prefs.setStringList(
+        _importedGamesPrefsKey,
+        verifiedGames.map((game) => jsonEncode(game.toJson())).toList(),
+      );
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _games = verifiedGames;
+      _isLoading = false;
+    });
+  }
+
+  void _playGame(ImportedGame game) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) =>
+            EmulatorScreen(romPath: game.path, theme: _globalSelectedTheme),
+      ),
+    );
+  }
+
+  Future<void> _removeGame(ImportedGame game) async {
+    final prefs = await SharedPreferences.getInstance();
+    final updatedGames = _games
+        .where((savedGame) => savedGame.id != game.id)
+        .toList();
+    await prefs.setStringList(
+      _importedGamesPrefsKey,
+      updatedGames.map((savedGame) => jsonEncode(savedGame.toJson())).toList(),
+    );
+
+    try {
+      final file = File(game.path);
+      if (await file.exists()) {
+        await file.delete();
+      }
+    } catch (_) {
+      // The entry is removed even if the local copy was already unavailable.
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _games = updatedGames;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'SAVED GAMES',
+              style: GoogleFonts.outfit(
+                fontSize: 28,
+                fontWeight: FontWeight.w900,
+                color: Colors.white,
+                letterSpacing: -0.5,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Imported games stay here for quick replay.',
+              style: GoogleFonts.outfit(fontSize: 14, color: Colors.white54),
+            ),
+            const SizedBox(height: 24),
+            Expanded(
+              child: _isLoading
+                  ? const Center(
+                      child: CircularProgressIndicator(
+                        color: Color(0xFF9D4EDD),
+                      ),
+                    )
+                  : _games.isEmpty
+                  ? _buildEmptyState()
+                  : ListView.separated(
+                      itemCount: _games.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 14),
+                      itemBuilder: (context, index) {
+                        return _buildImportedGameCard(_games[index]);
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.06),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.save_rounded,
+              color: Colors.white38,
+              size: 38,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'No saved games yet',
+            style: GoogleFonts.outfit(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 18,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Import a ROM from My Console to add it here.',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.outfit(color: Colors.white54, fontSize: 13),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildImportedGameCard(ImportedGame game) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF151026),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withOpacity(0.08)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 54,
+            height: 54,
+            decoration: BoxDecoration(
+              color: const Color(0xFF73DB9A).withOpacity(0.16),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: const Icon(
+              Icons.sports_esports_rounded,
+              color: Color(0xFF73DB9A),
+              size: 28,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  game.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.outfit(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${game.fileName} • ${_formatFileSize(game.fileSize)}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.outfit(
+                    color: Colors.white54,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          IconButton(
+            tooltip: 'Remove',
+            onPressed: () => _removeGame(game),
+            icon: const Icon(Icons.delete_outline_rounded),
+            color: Colors.white38,
+          ),
+          FilledButton.icon(
+            onPressed: () => _playGame(game),
+            icon: const Icon(Icons.play_arrow_rounded, size: 18),
+            label: const Text('Play'),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF9D4EDD),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              textStyle: GoogleFonts.outfit(
+                fontWeight: FontWeight.w800,
+                fontSize: 13,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ==========================================
+// CONSOLE CONFIG SCREEN (TAB 2)
 // ==========================================
 
 class ConsoleConfigScreen extends StatefulWidget {
-  const ConsoleConfigScreen({super.key});
+  const ConsoleConfigScreen({super.key, required this.onGameImported});
+
+  final VoidCallback onGameImported;
 
   @override
   State<ConsoleConfigScreen> createState() => _ConsoleConfigScreenState();
@@ -1164,11 +1505,56 @@ class _ConsoleConfigScreenState extends State<ConsoleConfigScreen> {
         allowedExtensions: ['gba', 'zip', 'gbc', 'gb', 'nes'],
       );
       if (result != null && result.files.single.path != null) {
+        final pickedFile = result.files.single;
+        final sourcePath = pickedFile.path!;
+        final options = await _showImportOptionsDialog(pickedFile.name);
+        if (options == null) return;
+
+        var playablePath = sourcePath;
+        ImportedGame? importedGame;
+
+        if (options.saveToLibrary) {
+          final sourceFile = File(sourcePath);
+          final fileName = _safeFileName(pickedFile.name);
+          final docsDir = await getApplicationDocumentsDirectory();
+          final importedDir = Directory('${docsDir.path}/imported_roms');
+          if (!await importedDir.exists()) {
+            await importedDir.create(recursive: true);
+          }
+
+          final id = DateTime.now().millisecondsSinceEpoch.toString();
+          final savedPath = '${importedDir.path}/${id}_$fileName';
+          final savedFile = await sourceFile.copy(savedPath);
+          importedGame = ImportedGame(
+            id: id,
+            title: options.title,
+            path: savedFile.path,
+            fileName: pickedFile.name,
+            fileSize: await savedFile.length(),
+            importedAt: DateTime.now().toIso8601String(),
+          );
+
+          final prefs = await SharedPreferences.getInstance();
+          final savedGames = prefs.getStringList(_importedGamesPrefsKey) ?? [];
+          savedGames.insert(0, jsonEncode(importedGame.toJson()));
+          await prefs.setStringList(_importedGamesPrefsKey, savedGames);
+          playablePath = importedGame.path;
+        }
+
         if (!mounted) return;
+        if (importedGame != null) {
+          widget.onGameImported();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('"${importedGame.title}" saved to your library.'),
+              backgroundColor: const Color(0xFF73DB9A),
+            ),
+          );
+        }
         Navigator.of(context).push(
           MaterialPageRoute(
             builder: (_) => EmulatorScreen(
-              romPath: result.files.single.path!,
+              romPath: playablePath,
               theme: _globalSelectedTheme,
             ),
           ),
@@ -1180,6 +1566,122 @@ class _ConsoleConfigScreenState extends State<ConsoleConfigScreen> {
         context,
       ).showSnackBar(SnackBar(content: Text('Error selecting file: $e')));
     }
+  }
+
+  Future<ImportGameOptions?> _showImportOptionsDialog(String fileName) async {
+    final controller = TextEditingController(text: _cleanGameTitle(fileName));
+    var saveToLibrary = true;
+
+    final result = await showDialog<ImportGameOptions>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              backgroundColor: const Color(0xFF151026),
+              title: Text(
+                'Import Game',
+                style: GoogleFonts.outfit(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextField(
+                    controller: controller,
+                    enabled: saveToLibrary,
+                    autofocus: true,
+                    style: GoogleFonts.outfit(color: Colors.white),
+                    decoration: InputDecoration(
+                      labelText: 'Game name',
+                      labelStyle: GoogleFonts.outfit(color: Colors.white60),
+                      filled: true,
+                      fillColor: Colors.white.withOpacity(0.06),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(
+                          color: Colors.white.withOpacity(0.12),
+                        ),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: Color(0xFF9D4EDD)),
+                      ),
+                      disabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(
+                          color: Colors.white.withOpacity(0.08),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  CheckboxListTile(
+                    value: saveToLibrary,
+                    onChanged: (value) {
+                      setDialogState(() {
+                        saveToLibrary = value ?? true;
+                      });
+                    },
+                    contentPadding: EdgeInsets.zero,
+                    activeColor: const Color(0xFF9D4EDD),
+                    checkColor: Colors.white,
+                    title: Text(
+                      'Save to Saved Games',
+                      style: GoogleFonts.outfit(color: Colors.white),
+                    ),
+                    subtitle: Text(
+                      saveToLibrary
+                          ? 'Keep a local copy for one-tap replay later.'
+                          : 'Play once without adding it to Saved.',
+                      style: GoogleFonts.outfit(
+                        color: Colors.white54,
+                        fontSize: 12,
+                      ),
+                    ),
+                    controlAffinity: ListTileControlAffinity.leading,
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: Text(
+                    'Cancel',
+                    style: GoogleFonts.outfit(color: Colors.white60),
+                  ),
+                ),
+                FilledButton.icon(
+                  onPressed: () {
+                    final title = controller.text.trim();
+                    Navigator.of(context).pop(
+                      ImportGameOptions(
+                        title: title.isEmpty
+                            ? _cleanGameTitle(fileName)
+                            : title,
+                        saveToLibrary: saveToLibrary,
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.play_arrow_rounded, size: 18),
+                  label: const Text('Play'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF9D4EDD),
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    controller.dispose();
+    return result;
   }
 
   @override
