@@ -25,6 +25,7 @@ iOS file: `ios/Runner/Info.plist`
 
 ## Current placement
 
-- Banner ad: shown above the bottom navigation on the main app tabs.
+- Banner ad: helper code is available, but it is not mounted by default because
+  Android file picker flows can conflict with AdMob platform views.
 - Interstitial ad: shown after every 3 successful game downloads.
 - No ads are shown inside the emulator play screen.

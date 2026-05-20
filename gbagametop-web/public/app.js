@@ -7,6 +7,8 @@ let page = 1;
 let totalPages = 1;
 let search = '';
 let isLoading = false;
+let queuedReset = false;
+let requestVersion = 0;
 const pageSize = 24;
 
 function escapeHtml(value) {
@@ -50,8 +52,13 @@ function gameCard(game) {
 }
 
 async function loadGames({ reset = false } = {}) {
-  if (isLoading) return;
+  if (isLoading) {
+    queuedReset = queuedReset || reset;
+    if (reset) requestVersion += 1;
+    return;
+  }
   isLoading = true;
+  const version = ++requestVersion;
 
   if (reset) {
     page = 1;
@@ -72,6 +79,7 @@ async function loadGames({ reset = false } = {}) {
     const response = await fetch(`/api/games?${params.toString()}`);
     const payload = await response.json();
     if (!payload.ok) throw new Error(payload.error || 'Cannot load games');
+    if (version !== requestVersion) return;
 
     totalPages = payload.meta.totalPages;
     grid.insertAdjacentHTML('beforeend', payload.data.map(gameCard).join(''));
@@ -84,6 +92,10 @@ async function loadGames({ reset = false } = {}) {
     statusEl.textContent = error.message;
   } finally {
     isLoading = false;
+    if (queuedReset) {
+      queuedReset = false;
+      loadGames({ reset: true });
+    }
   }
 }
 

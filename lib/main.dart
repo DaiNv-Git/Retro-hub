@@ -49,7 +49,7 @@ class RetroHubApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'GBAGame - GBA Emulator & Games',
+      title: 'GBAGame: Gameboy Advance (GBA) ROMs',
       themeMode: ThemeMode.dark,
       darkTheme: ThemeData.dark().copyWith(
         scaffoldBackgroundColor: const Color(0xFF0B0914),
@@ -77,7 +77,7 @@ class AdConfig {
   static const androidInterstitialId = 'ca-app-pub-3940256099942544/1033173712';
   static const iosInterstitialId = 'ca-app-pub-3940256099942544/4411468910';
 
-  static bool get supportsAds => Platform.isAndroid || Platform.isIOS;
+  static bool get supportsAds => false;
 
   static String get bannerId {
     if (Platform.isIOS) return iosBannerId;
@@ -511,6 +511,16 @@ final List<HomebrewGame> fallbackGames = [
 // Global state for theme selection
 EmulatorTheme _globalSelectedTheme = availableThemes.first;
 
+Route<void> _buildEmulatorRoute(String romPath) {
+  return PageRouteBuilder<void>(
+    settings: const RouteSettings(name: '/emulator'),
+    transitionDuration: Duration.zero,
+    reverseTransitionDuration: Duration.zero,
+    pageBuilder: (context, animation, secondaryAnimation) =>
+        EmulatorScreen(romPath: romPath, theme: _globalSelectedTheme),
+  );
+}
+
 // ==========================================
 // MAIN TAB SCREEN
 // ==========================================
@@ -545,7 +555,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
       bottomNavigationBar: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const AdBanner(),
           Container(
             decoration: BoxDecoration(
               border: Border(
@@ -833,12 +842,10 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
   }
 
   void _playGame(String romPath) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) =>
-            EmulatorScreen(romPath: romPath, theme: _globalSelectedTheme),
-      ),
-    );
+    Navigator.of(
+      context,
+      rootNavigator: true,
+    ).push(_buildEmulatorRoute(romPath));
   }
 
   Future<void> _openOfficialPage(HomebrewGame game) async {
@@ -874,12 +881,13 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
     }).toList();
 
     // Featured game: Celeste or Anguna (first one that matches selected category, or default first)
-    final HomebrewGame? featuredGame = filteredGames.isNotEmpty
+    final hasSearch = _searchQuery.trim().isNotEmpty;
+    final HomebrewGame? featuredGame = !hasSearch && filteredGames.isNotEmpty
         ? filteredGames.first
         : null;
-    final remainingGames = filteredGames.isNotEmpty
-        ? filteredGames.sublist(featuredGame != null ? 1 : 0)
-        : <HomebrewGame>[];
+    final remainingGames = featuredGame == null
+        ? filteredGames
+        : filteredGames.skip(1).toList();
 
     return Scaffold(
       backgroundColor: const Color(0xFF0B0914),
@@ -893,28 +901,32 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'GBAGAME',
-                        style: GoogleFonts.outfit(
-                          fontSize: 28,
-                          fontWeight: FontWeight.w900,
-                          color: Colors.white,
-                          letterSpacing: -0.5,
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'GBAGAME',
+                          style: GoogleFonts.outfit(
+                            fontSize: 28,
+                            fontWeight: FontWeight.w900,
+                            color: Colors.white,
+                            letterSpacing: -0.5,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Free GBA Emulator & Games on Google Play',
-                        style: GoogleFonts.jetBrainsMono(
-                          fontSize: 12,
-                          color: const Color(0xFF73DB9A),
-                          fontWeight: FontWeight.bold,
+                        const SizedBox(height: 4),
+                        Text(
+                          'Gameboy Advance (GBA) ROMs - Free Emulator',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.jetBrainsMono(
+                            fontSize: 12,
+                            color: const Color(0xFF73DB9A),
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                   // Animated Console Icon
                   Container(
@@ -1060,7 +1072,7 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
                             const SizedBox(height: 16),
                           ],
                           // Featured Game section
-                          if (featuredGame != null && _searchQuery.isEmpty) ...[
+                          if (featuredGame != null) ...[
                             _buildFeaturedCard(featuredGame),
                             const SizedBox(height: 24),
                             Text(
@@ -1592,12 +1604,10 @@ class _ImportedGamesScreenState extends State<ImportedGamesScreen> {
   }
 
   void _playGame(ImportedGame game) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) =>
-            EmulatorScreen(romPath: game.path, theme: _globalSelectedTheme),
-      ),
-    );
+    Navigator.of(
+      context,
+      rootNavigator: true,
+    ).push(_buildEmulatorRoute(game.path));
   }
 
   Future<void> _removeGame(ImportedGame game) async {
@@ -1832,7 +1842,6 @@ class _ConsoleConfigScreenState extends State<ConsoleConfigScreen> {
 
   Future<void> _importGame() async {
     try {
-      await AdService.instance.pauseBannerForExternalUi();
       final result = await FilePicker.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['gba', 'zip', 'gbc', 'gb', 'nes'],
@@ -1875,32 +1884,38 @@ class _ConsoleConfigScreenState extends State<ConsoleConfigScreen> {
         }
 
         if (!mounted) return;
-        if (importedGame != null) {
-          widget.onGameImported();
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('"${importedGame.title}" saved to your library.'),
-              backgroundColor: const Color(0xFF73DB9A),
-            ),
-          );
-        }
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => EmulatorScreen(
-              romPath: playablePath,
-              theme: _globalSelectedTheme,
-            ),
-          ),
-        );
+        final targetPath = playablePath;
+        final savedGame = importedGame;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          unawaited(_openImportedGame(targetPath, savedGame));
+        });
       }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Error selecting file: $e')));
-    } finally {
-      AdService.instance.resumeBanner();
     }
+  }
+
+  Future<void> _openImportedGame(
+    String playablePath,
+    ImportedGame? importedGame,
+  ) async {
+    await Navigator.of(
+      context,
+      rootNavigator: true,
+    ).push(_buildEmulatorRoute(playablePath));
+
+    if (!mounted || importedGame == null) return;
+    widget.onGameImported();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('"${importedGame.title}" saved to your library.'),
+        backgroundColor: const Color(0xFF73DB9A),
+      ),
+    );
   }
 
   Future<ImportGameOptions?> _showImportOptionsDialog(String fileName) async {
@@ -1928,7 +1943,7 @@ class _ConsoleConfigScreenState extends State<ConsoleConfigScreen> {
                   TextField(
                     controller: controller,
                     enabled: saveToLibrary,
-                    autofocus: true,
+                    autofocus: false,
                     style: GoogleFonts.outfit(color: Colors.white),
                     decoration: InputDecoration(
                       labelText: 'Game name',
@@ -1983,7 +1998,10 @@ class _ConsoleConfigScreenState extends State<ConsoleConfigScreen> {
               ),
               actions: [
                 TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
+                  onPressed: () {
+                    FocusManager.instance.primaryFocus?.unfocus();
+                    Navigator.of(context).pop();
+                  },
                   child: Text(
                     'Cancel',
                     style: GoogleFonts.outfit(color: Colors.white60),
@@ -1991,6 +2009,7 @@ class _ConsoleConfigScreenState extends State<ConsoleConfigScreen> {
                 ),
                 FilledButton.icon(
                   onPressed: () {
+                    FocusManager.instance.primaryFocus?.unfocus();
                     final title = controller.text.trim();
                     Navigator.of(context).pop(
                       ImportGameOptions(
@@ -3156,12 +3175,16 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     ),
                   ),
                   const SizedBox(width: 16),
-                  Text(
-                    'GBAGame - GBA Emulator & Games',
-                    style: GoogleFonts.outfit(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
+                  Expanded(
+                    child: Text(
+                      'GBAGame: Gameboy Advance (GBA) ROMs',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.outfit(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
                     ),
                   ),
                 ],
@@ -3305,7 +3328,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Search "GBAGame", "GBA Emulator", or "GBA Games" on Google Play to find this free app again, get updates, and share it with friends.',
+            'Search "GBAGame", "Gameboy Advance (GBA) ROMs", or "GBA Emulator" on Google Play to find this free app again, get updates, and share it with friends.',
             style: GoogleFonts.outfit(
               fontSize: 16,
               color: Colors.white.withOpacity(0.9),
