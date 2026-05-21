@@ -18,7 +18,6 @@ const defaultConfig = {
   consoleActionInterstitialEnabled: true,
   downloadCompleteInterstitialEnabled: true,
   playExitInterstitialEnabled: true,
-  fastDownloadRewardedEnabled: true,
   featuredPicksRewardedEnabled: true,
   skinRewardedEnabled: true,
   inlineBannerEvery: 2,
@@ -46,7 +45,6 @@ const booleanFields = [
   'consoleActionInterstitialEnabled',
   'downloadCompleteInterstitialEnabled',
   'playExitInterstitialEnabled',
-  'fastDownloadRewardedEnabled',
   'featuredPicksRewardedEnabled',
   'skinRewardedEnabled',
 ];

@@ -16,7 +16,16 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
 
+class MyHttpOverrides extends HttpOverrides {
+  @override
+  HttpClient createHttpClient(SecurityContext? context) {
+    return super.createHttpClient(context)
+      ..badCertificateCallback = (X509Certificate cert, String host, int port) => true;
+  }
+}
+
 void main() async {
+  HttpOverrides.global = MyHttpOverrides();
   WidgetsFlutterBinding.ensureInitialized();
   unawaited(
     AdService.instance.loadRemoteConfig().then((_) {
@@ -108,7 +117,6 @@ class RemoteAdConfig {
   final bool consoleActionInterstitialEnabled;
   final bool downloadCompleteInterstitialEnabled;
   final bool playExitInterstitialEnabled;
-  final bool fastDownloadRewardedEnabled;
   final bool featuredPicksRewardedEnabled;
   final bool skinRewardedEnabled;
   final int inlineBannerEvery;
@@ -135,7 +143,6 @@ class RemoteAdConfig {
     required this.consoleActionInterstitialEnabled,
     required this.downloadCompleteInterstitialEnabled,
     required this.playExitInterstitialEnabled,
-    required this.fastDownloadRewardedEnabled,
     required this.featuredPicksRewardedEnabled,
     required this.skinRewardedEnabled,
     required this.inlineBannerEvery,
@@ -163,7 +170,6 @@ class RemoteAdConfig {
     consoleActionInterstitialEnabled: true,
     downloadCompleteInterstitialEnabled: true,
     playExitInterstitialEnabled: true,
-    fastDownloadRewardedEnabled: true,
     featuredPicksRewardedEnabled: true,
     skinRewardedEnabled: true,
     inlineBannerEvery: 2,
@@ -215,9 +221,6 @@ class RemoteAdConfig {
       playExitInterstitialEnabled:
           config['playExitInterstitialEnabled'] as bool? ??
           defaults.playExitInterstitialEnabled,
-      fastDownloadRewardedEnabled:
-          config['fastDownloadRewardedEnabled'] as bool? ??
-          defaults.fastDownloadRewardedEnabled,
       featuredPicksRewardedEnabled:
           config['featuredPicksRewardedEnabled'] as bool? ??
           defaults.featuredPicksRewardedEnabled,
@@ -576,13 +579,19 @@ class AdService {
     if (ad == null) {
       _loadRewarded();
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(unavailableMessage),
-            backgroundColor: const Color(0xFF9D4EDD),
-            duration: const Duration(seconds: 2),
-          ),
+        bool rewarded = false;
+        await showDialog<void>(
+          context: context,
+          barrierDismissible: false,
+          builder: (dialogContext) {
+            return MockAdDialog(
+              onRewardEarned: () {
+                rewarded = true;
+              },
+            );
+          },
         );
+        return rewarded;
       }
       return false;
     }
@@ -690,6 +699,147 @@ class AdService {
     showInterstitialWhenReady(
       minInterval: Duration(
         seconds: _remoteConfig.actionInterstitialCooldownSeconds,
+      ),
+    );
+  }
+}
+
+class MockAdDialog extends StatefulWidget {
+  final VoidCallback onRewardEarned;
+
+  const MockAdDialog({super.key, required this.onRewardEarned});
+
+  @override
+  State<MockAdDialog> createState() => _MockAdDialogState();
+}
+
+class _MockAdDialogState extends State<MockAdDialog> {
+  int _secondsLeft = 3;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) return;
+      setState(() {
+        if (_secondsLeft > 1) {
+          _secondsLeft--;
+        } else {
+          _secondsLeft = 0;
+          _timer?.cancel();
+          widget.onRewardEarned();
+        }
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: const Color(0xFF151515),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF9D4EDD).withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    'SPONSOR AD (TEST MODE)',
+                    style: GoogleFonts.jetBrainsMono(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: const Color(0xFF9D4EDD),
+                    ),
+                  ),
+                ),
+                if (_secondsLeft == 0)
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded, color: Colors.white60),
+                    onPressed: () => Navigator.of(context).pop(),
+                  )
+                else
+                  Text(
+                    '$_secondsLeft s',
+                    style: GoogleFonts.jetBrainsMono(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white70,
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            if (_secondsLeft > 0) ...[
+              const SizedBox(
+                width: 40,
+                height: 40,
+                child: CircularProgressIndicator(
+                  strokeWidth: 3,
+                  color: Color(0xFF9D4EDD),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'Watching sponsor video to unlock reward...',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.outfit(
+                  fontSize: 14,
+                  color: Colors.white70,
+                ),
+              ),
+            ] else ...[
+              const Icon(
+                Icons.check_circle_rounded,
+                color: Color(0xFF73DB9A),
+                size: 48,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Reward earned! You can now close the ad.',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.outfit(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF73DB9A),
+                    foregroundColor: Colors.black,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: Text(
+                    'CLAIM REWARD',
+                    style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -1223,10 +1373,8 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
   List<HomebrewGame> _games = fallbackGames;
   final Map<String, double> _downloadProgress = {};
   final Set<String> _downloadedGames = {};
-  final Set<String> _boostedDownloads = {};
   bool _isLoadingSaved = true;
   bool _isLoadingGames = true;
-  bool _fastDownloadInProgress = false;
   bool _featuredUnlockInProgress = false;
   DateTime? _featuredUnlockedUntil;
   String? _gamesError;
@@ -1404,77 +1552,7 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
     }
   }
 
-  HomebrewGame? _bestFastDownloadTarget() {
-    final candidates =
-        _games
-            .where(
-              (game) =>
-                  game.hasDirectDownload &&
-                  !_downloadedGames.contains(game.title) &&
-                  !_downloadProgress.containsKey(game.title),
-            )
-            .toList()
-          ..sort((a, b) => b.rating.compareTo(a.rating));
 
-    if (candidates.isEmpty) return null;
-    if (_selectedCategory == 'All' ||
-        _selectedCategory == _downloadedGamesFilter) {
-      return candidates.first;
-    }
-    return candidates.firstWhere(
-      (game) => game.category == _selectedCategory,
-      orElse: () => candidates.first,
-    );
-  }
-
-  Future<void> _startBestBoostedDownload() async {
-    final game = _bestFastDownloadTarget();
-    if (game == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No downloadable games available now.')),
-      );
-      return;
-    }
-    await _startBoostedDownload(game);
-  }
-
-  Future<void> _startBoostedDownload(HomebrewGame game) async {
-    if (_fastDownloadInProgress || _downloadProgress.containsKey(game.title)) {
-      return;
-    }
-    if (_downloadedGames.contains(game.title) || !game.hasDirectDownload) {
-      await _downloadAndPlay(game);
-      return;
-    }
-
-    setState(() => _fastDownloadInProgress = true);
-    try {
-      final earned = _adConfig.fastDownloadRewardedEnabled
-          ? await AdService.instance.showRewardedAd(
-              context: context,
-              unavailableMessage:
-                  'Fast download ad is loading. Try again soon.',
-            )
-          : true;
-      if (!mounted || !earned) return;
-
-      setState(() {
-        _boostedDownloads.add(game.title);
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Fast download unlocked for "${game.title}".'),
-          backgroundColor: const Color(0xFFFFCF5A),
-          duration: const Duration(seconds: 2),
-        ),
-      );
-      await _downloadAndPlay(game, boosted: true);
-    } finally {
-      if (mounted) {
-        setState(() => _fastDownloadInProgress = false);
-      }
-    }
-  }
 
   List<HomebrewGame> _featuredSuggestions() {
     final candidates =
@@ -1556,10 +1634,7 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
     }
   }
 
-  Future<void> _downloadAndPlay(
-    HomebrewGame game, {
-    bool boosted = false,
-  }) async {
+  Future<void> _downloadAndPlay(HomebrewGame game) async {
     if (!game.hasDirectDownload) {
       await _openOfficialPage(game);
       return;
@@ -1591,9 +1666,6 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
     if (!mounted) return;
     setState(() {
       _downloadProgress[title] = 0.0;
-      if (boosted) {
-        _boostedDownloads.add(title);
-      }
     });
 
     try {
@@ -1614,7 +1686,15 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
           });
         }
 
-        if (boosted && !game.isZipDownload) {
+        if (game.isZipDownload) {
+          final bytes = <int>[];
+          await for (final chunk in response) {
+            bytes.addAll(chunk);
+            updateProgress(chunk);
+          }
+          final gbaBytes = _extractGbaFromZip(bytes);
+          await file.writeAsBytes(gbaBytes);
+        } else {
           final sink = file.openWrite();
           try {
             await for (final chunk in response) {
@@ -1623,19 +1703,6 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
             }
           } finally {
             await sink.close();
-          }
-        } else {
-          final bytes = <int>[];
-          await for (final chunk in response) {
-            bytes.addAll(chunk);
-            updateProgress(chunk);
-          }
-
-          if (game.isZipDownload) {
-            final gbaBytes = _extractGbaFromZip(bytes);
-            await file.writeAsBytes(gbaBytes);
-          } else {
-            await file.writeAsBytes(bytes);
           }
         }
 
@@ -1650,7 +1717,6 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
         setState(() {
           _downloadProgress.remove(title);
           _downloadedGames.add(title);
-          _boostedDownloads.remove(title);
         });
         AdService.instance.markDownloadCompleted();
 
@@ -1669,7 +1735,6 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
       if (mounted) {
         setState(() {
           _downloadProgress.remove(title);
-          _boostedDownloads.remove(title);
         });
       }
       if (!mounted) return;
@@ -1986,32 +2051,15 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
   }
 
   Widget _buildRewardedActionRow() {
-    return Row(
-      children: [
-        Expanded(
-          child: _buildRewardedShortcutButton(
-            label: 'Fast Download',
-            icon: _fastDownloadInProgress
-                ? Icons.hourglass_top_rounded
-                : Icons.bolt_rounded,
-            color: const Color(0xFFFFCF5A),
-            onTap: _fastDownloadInProgress ? null : _startBestBoostedDownload,
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _buildRewardedShortcutButton(
-            label: _hasFeaturedUnlock ? 'Picks Unlocked' : 'Featured Picks',
-            icon: _featuredUnlockInProgress
-                ? Icons.hourglass_top_rounded
-                : Icons.auto_awesome_rounded,
-            color: const Color(0xFF73DB9A),
-            onTap: _featuredUnlockInProgress
-                ? null
-                : _showRewardedFeaturedSuggestions,
-          ),
-        ),
-      ],
+    return _buildRewardedShortcutButton(
+      label: _hasFeaturedUnlock ? 'Picks Unlocked' : 'Featured Picks',
+      icon: _featuredUnlockInProgress
+          ? Icons.hourglass_top_rounded
+          : Icons.auto_awesome_rounded,
+      color: const Color(0xFF73DB9A),
+      onTap: _featuredUnlockInProgress
+          ? null
+          : _showRewardedFeaturedSuggestions,
     );
   }
 
@@ -2254,7 +2302,7 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
                           _adConfig.discoverActionInterstitialEnabled,
                     );
                     unawaited(
-                      _downloadAndPlay(game, boosted: _hasFeaturedUnlock),
+                      _downloadAndPlay(game),
                     );
                   },
             icon: Icon(
@@ -2651,7 +2699,6 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
     double progress, {
     required bool isFeatured,
   }) {
-    final isBoosted = _boostedDownloads.contains(game.title);
     if (isDownloading) {
       return Container(
         width: isFeatured ? 80 : 70,
@@ -2666,9 +2713,7 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
               child: CircularProgressIndicator(
                 value: progress,
                 strokeWidth: 2,
-                color: isBoosted
-                    ? const Color(0xFFFFCF5A)
-                    : (isFeatured ? Colors.white : const Color(0xFF9D4EDD)),
+                color: isFeatured ? Colors.white : const Color(0xFF9D4EDD),
               ),
             ),
             const SizedBox(height: 4),
@@ -2676,9 +2721,7 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
               '${(progress * 100).toInt()}%',
               style: GoogleFonts.jetBrainsMono(
                 fontSize: 9,
-                color: isBoosted
-                    ? const Color(0xFFFFCF5A)
-                    : (isFeatured ? Colors.white70 : const Color(0xFF9D4EDD)),
+                color: isFeatured ? Colors.white70 : const Color(0xFF9D4EDD),
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -2703,7 +2746,7 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
               ? Icons.open_in_new_rounded
               : Icons.cloud_download_rounded);
 
-    final primaryButton = GestureDetector(
+    return GestureDetector(
       onTap: () {
         AdService.instance.showActionInterstitial(
           placementEnabled: _adConfig.discoverActionInterstitialEnabled,
@@ -2743,58 +2786,6 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
               ),
             ),
           ],
-        ),
-      ),
-    );
-
-    final canBoost = game.hasDirectDownload && !isDownloaded;
-    if (!canBoost) return primaryButton;
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        primaryButton,
-        SizedBox(width: isFeatured ? 8 : 6),
-        _buildBoostDownloadButton(game, isFeatured: isFeatured),
-      ],
-    );
-  }
-
-  Widget _buildBoostDownloadButton(
-    HomebrewGame game, {
-    required bool isFeatured,
-  }) {
-    final isBusy =
-        _fastDownloadInProgress || _downloadProgress.containsKey(game.title);
-    return Tooltip(
-      message: 'Watch ad for fast download',
-      child: GestureDetector(
-        onTap: isBusy ? null : () => _startBoostedDownload(game),
-        child: AnimatedOpacity(
-          duration: const Duration(milliseconds: 160),
-          opacity: isBusy ? 0.55 : 1,
-          child: Container(
-            width: isFeatured ? 38 : 34,
-            height: isFeatured ? 38 : 34,
-            decoration: BoxDecoration(
-              color: const Color(0xFFFFCF5A),
-              shape: BoxShape.circle,
-              boxShadow: isFeatured
-                  ? [
-                      BoxShadow(
-                        color: const Color(0xFFFFCF5A).withValues(alpha: 0.35),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ]
-                  : null,
-            ),
-            child: Icon(
-              isBusy ? Icons.hourglass_top_rounded : Icons.bolt_rounded,
-              color: Colors.black,
-              size: isFeatured ? 19 : 17,
-            ),
-          ),
         ),
       ),
     );

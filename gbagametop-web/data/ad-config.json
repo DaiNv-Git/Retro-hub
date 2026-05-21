@@ -12,7 +12,6 @@
   "consoleActionInterstitialEnabled": true,
   "downloadCompleteInterstitialEnabled": true,
   "playExitInterstitialEnabled": true,
-  "fastDownloadRewardedEnabled": true,
   "featuredPicksRewardedEnabled": true,
   "skinRewardedEnabled": true,
   "inlineBannerEvery": 2,

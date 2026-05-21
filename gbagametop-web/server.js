@@ -39,7 +39,6 @@ const defaultAdConfig = {
   consoleActionInterstitialEnabled: true,
   downloadCompleteInterstitialEnabled: true,
   playExitInterstitialEnabled: true,
-  fastDownloadRewardedEnabled: true,
   featuredPicksRewardedEnabled: true,
   skinRewardedEnabled: true,
   inlineBannerEvery: 2,
@@ -130,7 +129,6 @@ function normalizeAdConfig(input = {}) {
     downloadCompleteInterstitialEnabled:
       merged.downloadCompleteInterstitialEnabled !== false,
     playExitInterstitialEnabled: merged.playExitInterstitialEnabled !== false,
-    fastDownloadRewardedEnabled: merged.fastDownloadRewardedEnabled !== false,
     featuredPicksRewardedEnabled:
       merged.featuredPicksRewardedEnabled !== false,
     skinRewardedEnabled: merged.skinRewardedEnabled !== false,
