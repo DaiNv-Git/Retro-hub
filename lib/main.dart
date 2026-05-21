@@ -3640,12 +3640,6 @@ class _EmulatorScreenState extends State<EmulatorScreen> {
     ''');
   }
 
-  void _tapInput(int inputValue) {
-    _sendInput(inputValue, true);
-    Future.delayed(const Duration(milliseconds: 60), () {
-      if (mounted) _sendInput(inputValue, false);
-    });
-  }
 
   Future<void> _saveDataToFile(String base64Data, String filePath) async {
     try {
@@ -3653,17 +3647,86 @@ class _EmulatorScreenState extends State<EmulatorScreen> {
       final file = File(filePath);
       await file.writeAsBytes(bytes);
       debugPrint('Successfully saved game data to $filePath');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(filePath.endsWith('.state')
+                ? 'Saved state successfully!'
+                : 'Saved game successfully!'),
+            duration: const Duration(seconds: 1),
+            backgroundColor: const Color(0xFF73DB9A),
+          ),
+        );
+      }
     } catch (e) {
       debugPrint('Error saving game data to $filePath: $e');
     }
   }
 
   void _triggerSave() {
-    _tapInput(_inputQuickSave);
+    _controller.runJavaScript('''
+      (async function() {
+        try {
+          var emulator = window.EJS_emulator;
+          if (!emulator || !emulator.gameManager) return;
+          var state = await emulator.gameManager.getState();
+          if (!state) return;
+          var binary = '';
+          var bytes = new Uint8Array(state);
+          var len = bytes.byteLength;
+          for (var i = 0; i < len; i++) {
+            binary += String.fromCharCode(bytes[i]);
+          }
+          var base64 = window.btoa(binary);
+          if (window.FlutterSaveStateChannel) {
+            window.FlutterSaveStateChannel.postMessage(base64);
+          }
+        } catch(e) {
+          console.error("Save state error:", e);
+        }
+      })();
+    ''');
   }
 
-  void _triggerLoad() {
-    _tapInput(_inputQuickLoad);
+  Future<void> _triggerLoad() async {
+    try {
+      final stateFile = File(widget.romPath + '.state');
+      if (await stateFile.exists()) {
+        final bytes = await stateFile.readAsBytes();
+        final base64Str = base64.encode(bytes);
+        await _controller.runJavaScript('''
+          (async function() {
+            try {
+              var emulator = window.EJS_emulator;
+              if (!emulator || !emulator.gameManager) return;
+              var base64Str = "$base64Str";
+              var binary = window.atob(base64Str);
+              var len = binary.length;
+              var bytes = new Uint8Array(len);
+              for (var i = 0; i < len; i++) {
+                bytes[i] = binary.charCodeAt(i);
+              }
+              await emulator.gameManager.loadState(bytes);
+              console.log("State loaded successfully");
+            } catch(e) {
+              console.error("Load state error:", e);
+            }
+          })();
+        ''');
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No saved state found.'),
+              duration: Duration(seconds: 2),
+              backgroundColor: Color(0xFFFF5252),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('Error loading game state: $e');
+    }
   }
 
   void _triggerMenu() {
