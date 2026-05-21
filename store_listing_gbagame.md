@@ -2,29 +2,66 @@
 
 ## App Name
 
-GBAGame: Gameboy Advance (GBA) ROMs
+GBAGame: GBA Homebrew
 
 ## Short Description
 
-Free Gameboy Advance (GBA) ROMs emulator for legal homebrew games and your own files.
+Play legal GBA homebrew games and your own classic files.
 
 ## Full Description
 
-GBAGame is a free Gameboy Advance (GBA) ROMs emulator and games app for fans of classic handheld gaming.
+GBAGame is a clean GBA homebrew emulator built for classic handheld fans who want a simple way to discover legal games and play their own game files.
 
-Play your own legally obtained `.gba` or `.zip` game files, manage saved games,
-and discover free legal GBA homebrew and official demos from the app library.
-GBAGame is built for a clean portable console experience with simple import,
-fast launch, and a retro-style game interface.
+Explore a curated library of legal GBA homebrew games, official demos, open-source projects, and public releases. Download supported homebrew titles, save them to your library, and launch them from a retro-style portable console interface.
 
-Search GBAGame on Google Play with keywords like Gameboy Advance (GBA) ROMs,
-GBA Emulator, GBA Games, Game Boy Advance, Retro Games, and Homebrew Games.
+You can also import your own legally obtained `.gba` and `.zip` files for quick replay. GBAGame keeps your saved games local on your device so you can jump back into your collection whenever you want.
 
-GBAGame does not include copyrighted commercial ROMs. Only download games that
-are officially free, open-source, public demos, or otherwise permitted for
-public distribution.
+Features:
 
-## Keywords
+- Discover legal GBA homebrew games and demos
+- Play your own `.gba` and `.zip` game files
+- Save imported games for one-tap replay
+- Built-in GBA emulator experience
+- Retro gamepad interface
+- Fast launch with cached game library
+- Community link for updates and recommendations
 
-Gameboy Advance (GBA) ROMs, GBA ROMs, GBA Emulator, GBA Games, Game Boy Advance,
-Retro Games, Homebrew Games, ROM Import, Free Emulator, Free GBA Games
+GBAGame does not include copyrighted commercial games. Only download or import games that are officially free, open-source, public demos, homebrew releases, or files that you have the legal right to use.
+
+GBAGame is an independent app and is not affiliated with, endorsed by, or sponsored by Nintendo, Game Boy, Game Boy Advance, or any related trademark owner.
+
+## Search Terms To Target
+
+Primary:
+
+- GBA emulator
+- GBA homebrew
+- Game Boy Advance emulator
+- retro game emulator
+- homebrew games
+
+Secondary:
+
+- `.gba` player
+- classic handheld games
+- legal GBA games
+- GBA game files
+- retro console emulator
+
+## Screenshot Captions
+
+1. Discover legal GBA homebrew games
+2. Import your own `.gba` files
+3. Save games for quick replay
+4. Play with a retro gamepad
+5. Join the community for updates
+
+## Privacy Policy URL
+
+https://gbagametop.shop/privacy.html
+
+## Notes
+
+- App name is 21 characters, under Google Play's 30-character limit.
+- Short description is 57 characters, under Google Play's 80-character limit.
+- Full description avoids keyword stuffing and avoids claiming official affiliation.

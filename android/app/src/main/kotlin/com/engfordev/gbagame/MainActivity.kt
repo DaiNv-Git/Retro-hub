@@ -1,4 +1,4 @@
-package com.engfordev.aiwallpapers
+package com.engfordev.gbagame
 
 import io.flutter.embedding.android.FlutterActivity
 

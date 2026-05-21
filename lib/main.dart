@@ -16,19 +16,13 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
 
-class MyHttpOverrides extends HttpOverrides {
-  @override
-  HttpClient createHttpClient(SecurityContext? context) {
-    return super.createHttpClient(context)
-      ..badCertificateCallback =
-          (X509Certificate cert, String host, int port) => true;
-  }
-}
-
 void main() async {
-  HttpOverrides.global = MyHttpOverrides();
   WidgetsFlutterBinding.ensureInitialized();
-  unawaited(AdService.instance.initialize());
+  unawaited(
+    AdService.instance.loadRemoteConfig().then((_) {
+      return AdService.instance.initialize();
+    }),
+  );
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
@@ -36,20 +30,16 @@ void main() async {
     ),
   );
 
-  final prefs = await SharedPreferences.getInstance();
-  final showOnboarding = prefs.getBool('show_onboarding') ?? true;
-
-  runApp(RetroHubApp(showOnboarding: showOnboarding));
+  runApp(const RetroHubApp());
 }
 
 class RetroHubApp extends StatelessWidget {
-  final bool showOnboarding;
-  const RetroHubApp({super.key, required this.showOnboarding});
+  const RetroHubApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'GBAGame: Gameboy Advance (GBA) ROMs',
+      title: 'GBAGame: GBA Homebrew',
       themeMode: ThemeMode.dark,
       darkTheme: ThemeData.dark().copyWith(
         scaffoldBackgroundColor: const Color(0xFF0B0914),
@@ -58,7 +48,7 @@ class RetroHubApp extends StatelessWidget {
           surface: Color(0xFF151026),
         ),
       ),
-      home: showOnboarding ? const OnboardingScreen() : const MainTabScreen(),
+      home: const SplashScreen(),
       debugShowCheckedModeBanner: false,
     );
   }
@@ -76,8 +66,12 @@ class AdConfig {
   static const iosBannerId = 'ca-app-pub-3940256099942544/2934735716';
   static const androidInterstitialId = 'ca-app-pub-3940256099942544/1033173712';
   static const iosInterstitialId = 'ca-app-pub-3940256099942544/4411468910';
+  static const androidRewardedId = 'ca-app-pub-3940256099942544/5224354917';
+  static const iosRewardedId = 'ca-app-pub-3940256099942544/1712485313';
+  static const androidAppOpenId = 'ca-app-pub-3940256099942544/9257395921';
+  static const iosAppOpenId = 'ca-app-pub-3940256099942544/5575463023';
 
-  static bool get supportsAds => false;
+  static bool get supportsAds => true;
 
   static String get bannerId {
     if (Platform.isIOS) return iosBannerId;
@@ -88,6 +82,177 @@ class AdConfig {
     if (Platform.isIOS) return iosInterstitialId;
     return androidInterstitialId;
   }
+
+  static String get rewardedId {
+    if (Platform.isIOS) return iosRewardedId;
+    return androidRewardedId;
+  }
+
+  static String get appOpenId {
+    if (Platform.isIOS) return iosAppOpenId;
+    return androidAppOpenId;
+  }
+}
+
+class RemoteAdConfig {
+  final bool adsEnabled;
+  final bool bannerEnabled;
+  final bool inlineBannerEnabled;
+  final bool interstitialEnabled;
+  final bool rewardedEnabled;
+  final bool appOpenEnabled;
+  final bool actionInterstitialEnabled;
+  final bool discoverActionInterstitialEnabled;
+  final bool savedGamePlayInterstitialEnabled;
+  final bool importedGamePlayInterstitialEnabled;
+  final bool consoleActionInterstitialEnabled;
+  final bool downloadCompleteInterstitialEnabled;
+  final bool playExitInterstitialEnabled;
+  final bool fastDownloadRewardedEnabled;
+  final bool featuredPicksRewardedEnabled;
+  final bool skinRewardedEnabled;
+  final int inlineBannerEvery;
+  final int downloadInterstitialCooldownSeconds;
+  final int playExitInterstitialCooldownSeconds;
+  final int actionInterstitialCooldownSeconds;
+  final int appOpenColdStartCooldownMinutes;
+  final int appOpenForegroundCooldownMinutes;
+  final int appOpenBackgroundThresholdSeconds;
+  final int appOpenLaunchThreshold;
+  final int featuredUnlockMinutes;
+
+  const RemoteAdConfig({
+    required this.adsEnabled,
+    required this.bannerEnabled,
+    required this.inlineBannerEnabled,
+    required this.interstitialEnabled,
+    required this.rewardedEnabled,
+    required this.appOpenEnabled,
+    required this.actionInterstitialEnabled,
+    required this.discoverActionInterstitialEnabled,
+    required this.savedGamePlayInterstitialEnabled,
+    required this.importedGamePlayInterstitialEnabled,
+    required this.consoleActionInterstitialEnabled,
+    required this.downloadCompleteInterstitialEnabled,
+    required this.playExitInterstitialEnabled,
+    required this.fastDownloadRewardedEnabled,
+    required this.featuredPicksRewardedEnabled,
+    required this.skinRewardedEnabled,
+    required this.inlineBannerEvery,
+    required this.downloadInterstitialCooldownSeconds,
+    required this.playExitInterstitialCooldownSeconds,
+    required this.actionInterstitialCooldownSeconds,
+    required this.appOpenColdStartCooldownMinutes,
+    required this.appOpenForegroundCooldownMinutes,
+    required this.appOpenBackgroundThresholdSeconds,
+    required this.appOpenLaunchThreshold,
+    required this.featuredUnlockMinutes,
+  });
+
+  static const defaults = RemoteAdConfig(
+    adsEnabled: true,
+    bannerEnabled: true,
+    inlineBannerEnabled: true,
+    interstitialEnabled: true,
+    rewardedEnabled: true,
+    appOpenEnabled: true,
+    actionInterstitialEnabled: true,
+    discoverActionInterstitialEnabled: true,
+    savedGamePlayInterstitialEnabled: true,
+    importedGamePlayInterstitialEnabled: true,
+    consoleActionInterstitialEnabled: true,
+    downloadCompleteInterstitialEnabled: true,
+    playExitInterstitialEnabled: true,
+    fastDownloadRewardedEnabled: true,
+    featuredPicksRewardedEnabled: true,
+    skinRewardedEnabled: true,
+    inlineBannerEvery: 2,
+    downloadInterstitialCooldownSeconds: 45,
+    playExitInterstitialCooldownSeconds: 60,
+    actionInterstitialCooldownSeconds: 60,
+    appOpenColdStartCooldownMinutes: 10,
+    appOpenForegroundCooldownMinutes: 5,
+    appOpenBackgroundThresholdSeconds: 90,
+    appOpenLaunchThreshold: 2,
+    featuredUnlockMinutes: 30,
+  );
+
+  factory RemoteAdConfig.fromJson(Map<String, dynamic> json) {
+    final config = json['config'] is Map<String, dynamic>
+        ? json['config'] as Map<String, dynamic>
+        : json;
+    return RemoteAdConfig(
+      adsEnabled: config['adsEnabled'] as bool? ?? defaults.adsEnabled,
+      bannerEnabled: config['bannerEnabled'] as bool? ?? defaults.bannerEnabled,
+      inlineBannerEnabled:
+          config['inlineBannerEnabled'] as bool? ??
+          defaults.inlineBannerEnabled,
+      interstitialEnabled:
+          config['interstitialEnabled'] as bool? ??
+          defaults.interstitialEnabled,
+      rewardedEnabled:
+          config['rewardedEnabled'] as bool? ?? defaults.rewardedEnabled,
+      appOpenEnabled:
+          config['appOpenEnabled'] as bool? ?? defaults.appOpenEnabled,
+      actionInterstitialEnabled:
+          config['actionInterstitialEnabled'] as bool? ??
+          defaults.actionInterstitialEnabled,
+      discoverActionInterstitialEnabled:
+          config['discoverActionInterstitialEnabled'] as bool? ??
+          defaults.discoverActionInterstitialEnabled,
+      savedGamePlayInterstitialEnabled:
+          config['savedGamePlayInterstitialEnabled'] as bool? ??
+          defaults.savedGamePlayInterstitialEnabled,
+      importedGamePlayInterstitialEnabled:
+          config['importedGamePlayInterstitialEnabled'] as bool? ??
+          defaults.importedGamePlayInterstitialEnabled,
+      consoleActionInterstitialEnabled:
+          config['consoleActionInterstitialEnabled'] as bool? ??
+          defaults.consoleActionInterstitialEnabled,
+      downloadCompleteInterstitialEnabled:
+          config['downloadCompleteInterstitialEnabled'] as bool? ??
+          defaults.downloadCompleteInterstitialEnabled,
+      playExitInterstitialEnabled:
+          config['playExitInterstitialEnabled'] as bool? ??
+          defaults.playExitInterstitialEnabled,
+      fastDownloadRewardedEnabled:
+          config['fastDownloadRewardedEnabled'] as bool? ??
+          defaults.fastDownloadRewardedEnabled,
+      featuredPicksRewardedEnabled:
+          config['featuredPicksRewardedEnabled'] as bool? ??
+          defaults.featuredPicksRewardedEnabled,
+      skinRewardedEnabled:
+          config['skinRewardedEnabled'] as bool? ??
+          defaults.skinRewardedEnabled,
+      inlineBannerEvery:
+          (config['inlineBannerEvery'] as num?)?.round() ??
+          defaults.inlineBannerEvery,
+      downloadInterstitialCooldownSeconds:
+          (config['downloadInterstitialCooldownSeconds'] as num?)?.round() ??
+          defaults.downloadInterstitialCooldownSeconds,
+      playExitInterstitialCooldownSeconds:
+          (config['playExitInterstitialCooldownSeconds'] as num?)?.round() ??
+          defaults.playExitInterstitialCooldownSeconds,
+      actionInterstitialCooldownSeconds:
+          (config['actionInterstitialCooldownSeconds'] as num?)?.round() ??
+          defaults.actionInterstitialCooldownSeconds,
+      appOpenColdStartCooldownMinutes:
+          (config['appOpenColdStartCooldownMinutes'] as num?)?.round() ??
+          defaults.appOpenColdStartCooldownMinutes,
+      appOpenForegroundCooldownMinutes:
+          (config['appOpenForegroundCooldownMinutes'] as num?)?.round() ??
+          defaults.appOpenForegroundCooldownMinutes,
+      appOpenBackgroundThresholdSeconds:
+          (config['appOpenBackgroundThresholdSeconds'] as num?)?.round() ??
+          defaults.appOpenBackgroundThresholdSeconds,
+      appOpenLaunchThreshold:
+          (config['appOpenLaunchThreshold'] as num?)?.round() ??
+          defaults.appOpenLaunchThreshold,
+      featuredUnlockMinutes:
+          (config['featuredUnlockMinutes'] as num?)?.round() ??
+          defaults.featuredUnlockMinutes,
+    );
+  }
 }
 
 class AdService {
@@ -97,22 +262,79 @@ class AdService {
 
   bool _initialized = false;
   bool _isLoadingInterstitial = false;
+  bool _isLoadingRewarded = false;
+  bool _isLoadingAppOpen = false;
+  bool _isShowingInterstitial = false;
+  bool _isShowingRewarded = false;
+  bool _isShowingAppOpen = false;
+  bool _isGameplayActive = false;
+  bool _appOpenListenerStarted = false;
+  bool _coldStartAppOpenAllowed = false;
+  DateTime? _lastInterstitialShownAt;
+  DateTime? _lastAppOpenShownAt;
+  DateTime? _lastBackgroundedAt;
+  DateTime? _appOpenLoadTime;
   InterstitialAd? _interstitialAd;
-  int _completedDownloadCount = 0;
+  RewardedAd? _rewardedAd;
+  AppOpenAd? _appOpenAd;
+  RemoteAdConfig _remoteConfig = RemoteAdConfig.defaults;
   final ValueNotifier<bool> bannerPaused = ValueNotifier<bool>(false);
+  final ValueNotifier<int> configVersion = ValueNotifier<int>(0);
+
+  RemoteAdConfig get config => _remoteConfig;
+  bool get _adsEnabled => AdConfig.supportsAds && _remoteConfig.adsEnabled;
 
   Future<void> initialize() async {
-    if (_initialized || !AdConfig.supportsAds) return;
+    if (_initialized || !_adsEnabled) return;
     try {
       await MobileAds.instance.initialize();
       _initialized = true;
       _loadInterstitial();
+      _loadRewarded();
+      _loadAppOpen();
+      _startAppOpenListener();
     } catch (_) {
       // Ads should never block the app from opening.
     }
   }
 
+  Future<void> loadRemoteConfig() async {
+    try {
+      final client = HttpClient();
+      client.connectionTimeout = const Duration(seconds: 5);
+      final request = await client.getUrl(
+        Uri.parse('$_apiBaseUrl/api/app/ad-config'),
+      );
+      request.headers.set(HttpHeaders.cacheControlHeader, 'no-cache');
+      final response = await request.close();
+      final body = await response.transform(utf8.decoder).join();
+      if (response.statusCode != 200) return;
+
+      final payload = jsonDecode(body) as Map<String, dynamic>;
+      _remoteConfig = RemoteAdConfig.fromJson(payload);
+      configVersion.value++;
+      if (!_adsEnabled) {
+        _interstitialAd?.dispose();
+        _rewardedAd?.dispose();
+        _appOpenAd?.dispose();
+        _interstitialAd = null;
+        _rewardedAd = null;
+        _appOpenAd = null;
+        return;
+      }
+
+      if (_initialized) {
+        _loadInterstitial();
+        _loadRewarded();
+        _loadAppOpen();
+      }
+    } catch (_) {
+      // Keep bundled defaults when remote config is unavailable.
+    }
+  }
+
   void _loadInterstitial() {
+    if (!_adsEnabled || !_remoteConfig.interstitialEnabled) return;
     if (!_initialized || _isLoadingInterstitial || _interstitialAd != null) {
       return;
     }
@@ -129,11 +351,13 @@ class AdService {
               FullScreenContentCallback(
                 onAdDismissedFullScreenContent: (ad) {
                   ad.dispose();
+                  _isShowingInterstitial = false;
                   _interstitialAd = null;
                   _loadInterstitial();
                 },
                 onAdFailedToShowFullScreenContent: (ad, error) {
                   ad.dispose();
+                  _isShowingInterstitial = false;
                   _interstitialAd = null;
                   _loadInterstitial();
                 },
@@ -147,23 +371,308 @@ class AdService {
     );
   }
 
-  void markDownloadCompleted() {
-    if (!_initialized) return;
-    _completedDownloadCount++;
-    if (_completedDownloadCount % 3 == 0) {
-      showInterstitialIfReady();
-    } else {
-      _loadInterstitial();
+  void _loadAppOpen() {
+    if (!_adsEnabled || !_remoteConfig.appOpenEnabled) return;
+    if (!_initialized || _isLoadingAppOpen || _appOpenAd != null) return;
+
+    _isLoadingAppOpen = true;
+    AppOpenAd.load(
+      adUnitId: AdConfig.appOpenId,
+      request: const AdRequest(),
+      adLoadCallback: AppOpenAdLoadCallback(
+        onAdLoaded: (ad) {
+          _isLoadingAppOpen = false;
+          _appOpenLoadTime = DateTime.now();
+          _appOpenAd = ad;
+        },
+        onAdFailedToLoad: (_) {
+          _isLoadingAppOpen = false;
+          _appOpenAd = null;
+          _appOpenLoadTime = null;
+        },
+      ),
+    );
+  }
+
+  void _startAppOpenListener() {
+    if (_appOpenListenerStarted || !_adsEnabled) return;
+    _appOpenListenerStarted = true;
+    unawaited(AppStateEventNotifier.startListening());
+    AppStateEventNotifier.appStateStream.listen((state) {
+      if (state == AppState.background) {
+        _lastBackgroundedAt = DateTime.now();
+        return;
+      }
+
+      final backgroundedAt = _lastBackgroundedAt;
+      final awayDuration = backgroundedAt == null
+          ? Duration.zero
+          : DateTime.now().difference(backgroundedAt);
+      if (awayDuration >=
+          Duration(seconds: _remoteConfig.appOpenBackgroundThresholdSeconds)) {
+        unawaited(
+          showAppOpenIfAvailable(
+            minInterval: Duration(
+              minutes: _remoteConfig.appOpenForegroundCooldownMinutes,
+            ),
+          ),
+        );
+      }
+    });
+  }
+
+  Future<void> prepareAppOpenForLaunch() async {
+    if (!_adsEnabled || !_remoteConfig.appOpenEnabled) return;
+    if (!_initialized) {
+      await initialize();
     }
+
+    final prefs = await SharedPreferences.getInstance();
+    final launches = (prefs.getInt('app_open_launch_count') ?? 0) + 1;
+    await prefs.setInt('app_open_launch_count', launches);
+    _coldStartAppOpenAllowed = launches >= _remoteConfig.appOpenLaunchThreshold;
+    _loadAppOpen();
+  }
+
+  void _loadRewarded() {
+    if (!_adsEnabled || !_remoteConfig.rewardedEnabled) return;
+    if (!_initialized || _isLoadingRewarded || _rewardedAd != null) {
+      return;
+    }
+
+    _isLoadingRewarded = true;
+    RewardedAd.load(
+      adUnitId: AdConfig.rewardedId,
+      request: const AdRequest(),
+      rewardedAdLoadCallback: RewardedAdLoadCallback(
+        onAdLoaded: (ad) {
+          _isLoadingRewarded = false;
+          _rewardedAd = ad;
+        },
+        onAdFailedToLoad: (_) {
+          _isLoadingRewarded = false;
+          _rewardedAd = null;
+        },
+      ),
+    );
+  }
+
+  void markDownloadCompleted() {
+    if (!_remoteConfig.downloadCompleteInterstitialEnabled) return;
+    showInterstitialWhenReady(
+      minInterval: Duration(
+        seconds: _remoteConfig.downloadInterstitialCooldownSeconds,
+      ),
+    );
+  }
+
+  void preloadInterstitial() {
+    if (!_adsEnabled) return;
+    if (!_initialized) {
+      unawaited(initialize());
+      return;
+    }
+    _loadInterstitial();
+    _loadRewarded();
+    _loadAppOpen();
+  }
+
+  Future<void> showAppOpenIfAvailable({
+    Duration minInterval = const Duration(minutes: 10),
+    bool coldStart = false,
+  }) async {
+    if (!_adsEnabled || !_remoteConfig.appOpenEnabled) return;
+    if (coldStart && !_coldStartAppOpenAllowed) return;
+    if (_isGameplayActive ||
+        _isShowingAppOpen ||
+        _isShowingInterstitial ||
+        _isShowingRewarded) {
+      return;
+    }
+    if (!_initialized) {
+      await initialize();
+    }
+
+    final lastShownAt = _lastAppOpenShownAt;
+    if (lastShownAt != null &&
+        DateTime.now().difference(lastShownAt) < minInterval) {
+      _loadAppOpen();
+      return;
+    }
+
+    final loadedAt = _appOpenLoadTime;
+    if (loadedAt != null &&
+        DateTime.now().difference(loadedAt) > const Duration(hours: 4)) {
+      _appOpenAd?.dispose();
+      _appOpenAd = null;
+      _appOpenLoadTime = null;
+      _loadAppOpen();
+      return;
+    }
+
+    final ad = _appOpenAd;
+    if (ad == null) {
+      _loadAppOpen();
+      return;
+    }
+
+    final completer = Completer<void>();
+    void finish() {
+      if (completer.isCompleted) return;
+      _isShowingAppOpen = false;
+      resumeBanner();
+      _loadAppOpen();
+      completer.complete();
+    }
+
+    _appOpenAd = null;
+    _appOpenLoadTime = null;
+    _isShowingAppOpen = true;
+    _lastAppOpenShownAt = DateTime.now();
+    _lastInterstitialShownAt = DateTime.now();
+    await pauseBannerForExternalUi();
+
+    ad.fullScreenContentCallback = FullScreenContentCallback<AppOpenAd>(
+      onAdDismissedFullScreenContent: (ad) {
+        ad.dispose();
+        finish();
+      },
+      onAdFailedToShowFullScreenContent: (ad, error) {
+        ad.dispose();
+        finish();
+      },
+    );
+
+    try {
+      await ad.show();
+    } catch (_) {
+      ad.dispose();
+      finish();
+    }
+
+    return completer.future.timeout(
+      const Duration(seconds: 30),
+      onTimeout: () {
+        finish();
+      },
+    );
+  }
+
+  void setGameplayActive(bool isActive) {
+    _isGameplayActive = isActive;
+  }
+
+  Future<bool> showRewardedAd({
+    required BuildContext context,
+    String unavailableMessage = 'Rewarded ad is loading. Try again soon.',
+  }) async {
+    if (!_adsEnabled || !_remoteConfig.rewardedEnabled) return true;
+    if (_isShowingRewarded) return false;
+    if (!_initialized) {
+      await initialize();
+    }
+
+    final ad = _rewardedAd;
+    if (ad == null) {
+      _loadRewarded();
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(unavailableMessage),
+            backgroundColor: const Color(0xFF9D4EDD),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+      return false;
+    }
+
+    final completer = Completer<bool>();
+    var rewardEarned = false;
+
+    void finish(bool value) {
+      if (completer.isCompleted) return;
+      _isShowingRewarded = false;
+      resumeBanner();
+      _loadRewarded();
+      completer.complete(value);
+    }
+
+    _rewardedAd = null;
+    _isShowingRewarded = true;
+    _lastInterstitialShownAt = DateTime.now();
+    await pauseBannerForExternalUi();
+
+    ad.fullScreenContentCallback = FullScreenContentCallback<RewardedAd>(
+      onAdDismissedFullScreenContent: (ad) {
+        ad.dispose();
+        finish(rewardEarned);
+      },
+      onAdFailedToShowFullScreenContent: (ad, error) {
+        ad.dispose();
+        finish(false);
+      },
+    );
+
+    try {
+      ad.setImmersiveMode(true);
+      await ad.show(
+        onUserEarnedReward: (AdWithoutView ad, RewardItem reward) {
+          rewardEarned = true;
+        },
+      );
+    } catch (_) {
+      ad.dispose();
+      finish(false);
+    }
+
+    return completer.future.timeout(
+      const Duration(seconds: 45),
+      onTimeout: () {
+        finish(rewardEarned);
+        return rewardEarned;
+      },
+    );
+  }
+
+  void showInterstitialWhenReady({
+    Duration minInterval = const Duration(seconds: 15),
+  }) {
+    if (!_adsEnabled ||
+        !_remoteConfig.interstitialEnabled ||
+        _isShowingInterstitial) {
+      return;
+    }
+    if (!_initialized) {
+      unawaited(initialize());
+      return;
+    }
+
+    final lastShownAt = _lastInterstitialShownAt;
+    if (lastShownAt != null &&
+        DateTime.now().difference(lastShownAt) < minInterval) {
+      _loadInterstitial();
+      return;
+    }
+
+    if (_interstitialAd == null) {
+      _loadInterstitial();
+      return;
+    }
+
+    showInterstitialIfReady();
   }
 
   void showInterstitialIfReady() {
+    if (_isShowingInterstitial) return;
     final ad = _interstitialAd;
     if (ad == null) {
       _loadInterstitial();
       return;
     }
     _interstitialAd = null;
+    _isShowingInterstitial = true;
+    _lastInterstitialShownAt = DateTime.now();
     ad.show();
   }
 
@@ -174,6 +683,15 @@ class AdService {
 
   void resumeBanner() {
     bannerPaused.value = false;
+  }
+
+  void showActionInterstitial({bool placementEnabled = true}) {
+    if (!_remoteConfig.actionInterstitialEnabled || !placementEnabled) return;
+    showInterstitialWhenReady(
+      minInterval: Duration(
+        seconds: _remoteConfig.actionInterstitialCooldownSeconds,
+      ),
+    );
   }
 }
 
@@ -220,24 +738,34 @@ class _AdBannerState extends State<AdBanner> {
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<bool>(
-      valueListenable: AdService.instance.bannerPaused,
-      builder: (context, isPaused, child) {
-        final bannerAd = _bannerAd;
-        if (isPaused || !_isLoaded || bannerAd == null) {
-          return const SizedBox.shrink();
-        }
+    return ValueListenableBuilder<int>(
+      valueListenable: AdService.instance.configVersion,
+      builder: (context, version, child) {
+        return ValueListenableBuilder<bool>(
+          valueListenable: AdService.instance.bannerPaused,
+          builder: (context, isPaused, child) {
+            final bannerAd = _bannerAd;
+            final config = AdService.instance.config;
+            if (!config.adsEnabled ||
+                !config.bannerEnabled ||
+                isPaused ||
+                !_isLoaded ||
+                bannerAd == null) {
+              return const SizedBox.shrink();
+            }
 
-        return Container(
-          width: double.infinity,
-          height: bannerAd.size.height.toDouble(),
-          alignment: Alignment.center,
-          color: const Color(0xFF0B0914),
-          child: SizedBox(
-            width: bannerAd.size.width.toDouble(),
-            height: bannerAd.size.height.toDouble(),
-            child: AdWidget(ad: bannerAd),
-          ),
+            return Container(
+              width: double.infinity,
+              height: bannerAd.size.height.toDouble(),
+              alignment: Alignment.center,
+              color: const Color(0xFF0B0914),
+              child: SizedBox(
+                width: bannerAd.size.width.toDouble(),
+                height: bannerAd.size.height.toDouble(),
+                child: AdWidget(ad: bannerAd),
+              ),
+            );
+          },
         );
       },
     );
@@ -261,6 +789,28 @@ class EmulatorTheme {
     required this.backgroundCss,
     required this.glowColor,
     required this.overlayCss,
+  });
+}
+
+class GamepadSkin {
+  final String id;
+  final String name;
+  final Color panel;
+  final Color surface;
+  final Color pressedSurface;
+  final Color border;
+  final Color accent;
+  final Color text;
+
+  const GamepadSkin({
+    required this.id,
+    required this.name,
+    required this.panel,
+    required this.surface,
+    required this.pressedSurface,
+    required this.border,
+    required this.accent,
+    required this.text,
   });
 }
 
@@ -292,6 +842,49 @@ const List<EmulatorTheme> availableThemes = [
     backgroundCss: '#000000',
     glowColor: 'transparent',
     overlayCss: 'display: none;',
+  ),
+];
+
+const List<GamepadSkin> availableGamepadSkins = [
+  GamepadSkin(
+    id: 'neon',
+    name: 'Neon',
+    panel: Color(0xFF241331),
+    surface: Color(0xFF34234A),
+    pressedSurface: Color(0xFF6941A2),
+    border: Color(0xFFB977FF),
+    accent: Color(0xFFC77DFF),
+    text: Colors.white,
+  ),
+  GamepadSkin(
+    id: 'mint',
+    name: 'Mint',
+    panel: Color(0xFF122821),
+    surface: Color(0xFF1D3A31),
+    pressedSurface: Color(0xFF2F8F6F),
+    border: Color(0xFF73DB9A),
+    accent: Color(0xFF73DB9A),
+    text: Colors.white,
+  ),
+  GamepadSkin(
+    id: 'amber',
+    name: 'Amber',
+    panel: Color(0xFF302312),
+    surface: Color(0xFF44321A),
+    pressedSurface: Color(0xFFB5761F),
+    border: Color(0xFFFFCF5A),
+    accent: Color(0xFFFFCF5A),
+    text: Colors.white,
+  ),
+  GamepadSkin(
+    id: 'arcade',
+    name: 'Arcade',
+    panel: Color(0xFF111B2A),
+    surface: Color(0xFF1D2B40),
+    pressedSurface: Color(0xFF215D92),
+    border: Color(0xFF5FA8D3),
+    accent: Color(0xFF5FA8D3),
+    text: Colors.white,
   ),
 ];
 
@@ -407,6 +1000,8 @@ class ImportGameOptions {
 }
 
 const String _importedGamesPrefsKey = 'imported_games';
+const String _remoteGamesPrefsKey = 'remote_homebrew_games_v1';
+const String _downloadedGamesFilter = 'Downloaded';
 const String _apiBaseUrl = 'https://gbagametop.shop';
 
 String _decodeHtml(String value) {
@@ -510,14 +1105,18 @@ final List<HomebrewGame> fallbackGames = [
 
 // Global state for theme selection
 EmulatorTheme _globalSelectedTheme = availableThemes.first;
+GamepadSkin _globalSelectedGamepadSkin = availableGamepadSkins.first;
 
-Route<void> _buildEmulatorRoute(String romPath) {
+Route<void> _buildEmulatorRoute(String romPath, {String? coverUrl}) {
   return PageRouteBuilder<void>(
     settings: const RouteSettings(name: '/emulator'),
     transitionDuration: Duration.zero,
     reverseTransitionDuration: Duration.zero,
-    pageBuilder: (context, animation, secondaryAnimation) =>
-        EmulatorScreen(romPath: romPath, theme: _globalSelectedTheme),
+    pageBuilder: (context, animation, secondaryAnimation) => EmulatorScreen(
+      romPath: romPath,
+      theme: _globalSelectedTheme,
+      coverUrl: coverUrl,
+    ),
   );
 }
 
@@ -551,10 +1150,11 @@ class _MainTabScreenState extends State<MainTabScreen> {
     ];
 
     return Scaffold(
-      body: screens[_currentIndex],
+      body: IndexedStack(index: _currentIndex, children: screens),
       bottomNavigationBar: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          const AdBanner(),
           Container(
             decoration: BoxDecoration(
               border: Border(
@@ -563,7 +1163,14 @@ class _MainTabScreenState extends State<MainTabScreen> {
             ),
             child: BottomNavigationBar(
               currentIndex: _currentIndex,
-              onTap: (index) => setState(() => _currentIndex = index),
+              onTap: (index) {
+                setState(() {
+                  if (index == 1) {
+                    _importedGamesVersion++;
+                  }
+                  _currentIndex = index;
+                });
+              },
               backgroundColor: const Color(0xFF0B0914),
               selectedItemColor: const Color(0xFF9D4EDD),
               unselectedItemColor: Colors.white38,
@@ -616,9 +1223,14 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
   List<HomebrewGame> _games = fallbackGames;
   final Map<String, double> _downloadProgress = {};
   final Set<String> _downloadedGames = {};
+  final Set<String> _boostedDownloads = {};
   bool _isLoadingSaved = true;
   bool _isLoadingGames = true;
+  bool _fastDownloadInProgress = false;
+  bool _featuredUnlockInProgress = false;
+  DateTime? _featuredUnlockedUntil;
   String? _gamesError;
+  RemoteAdConfig get _adConfig => AdService.instance.config;
 
   @override
   void initState() {
@@ -633,16 +1245,72 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
   }
 
   Future<void> _loadInitialData() async {
-    await _loadRemoteGames();
+    await _loadFeaturedUnlock();
+    await _loadCachedRemoteGames();
     await _loadDownloadedGames();
+    unawaited(_loadRemoteGames());
+  }
+
+  bool get _hasFeaturedUnlock {
+    final unlockedUntil = _featuredUnlockedUntil;
+    return unlockedUntil != null && DateTime.now().isBefore(unlockedUntil);
+  }
+
+  Future<void> _loadFeaturedUnlock() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedMillis = prefs.getInt('featured_picks_unlocked_until');
+    if (savedMillis == null) return;
+
+    final unlockedUntil = DateTime.fromMillisecondsSinceEpoch(savedMillis);
+    if (DateTime.now().isAfter(unlockedUntil)) {
+      await prefs.remove('featured_picks_unlocked_until');
+      return;
+    }
+
+    _featuredUnlockedUntil = unlockedUntil;
+  }
+
+  Future<void> _loadCachedRemoteGames() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cachedPayload = prefs.getString(_remoteGamesPrefsKey);
+      if (cachedPayload == null || cachedPayload.isEmpty) {
+        if (!mounted) return;
+        setState(() {
+          _isLoadingGames = false;
+        });
+        return;
+      }
+
+      final rawItems = jsonDecode(cachedPayload) as List<dynamic>;
+      final cachedGames = rawItems
+          .whereType<Map<String, dynamic>>()
+          .map(HomebrewGame.fromApiJson)
+          .toList();
+      if (cachedGames.isEmpty) return;
+
+      if (!mounted) return;
+      setState(() {
+        _games = cachedGames;
+        _gamesError = null;
+        _isLoadingGames = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isLoadingGames = false;
+      });
+    }
   }
 
   Future<void> _loadRemoteGames() async {
     try {
       final client = HttpClient();
+      client.connectionTimeout = const Duration(seconds: 5);
       final request = await client.getUrl(
         Uri.parse('$_apiBaseUrl/api/app/home'),
       );
+      request.headers.set(HttpHeaders.cacheControlHeader, 'max-age=300');
       final response = await request.close();
       final body = await response.transform(utf8.decoder).join();
 
@@ -666,6 +1334,9 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
         throw Exception('No games returned from API');
       }
 
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_remoteGamesPrefsKey, jsonEncode(rawItems));
+
       if (!mounted) return;
       setState(() {
         _games = remoteGames;
@@ -674,9 +1345,12 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
       });
     } catch (e) {
       if (!mounted) return;
+      final hasVisibleGames = _games.isNotEmpty;
       setState(() {
-        _games = fallbackGames;
-        _gamesError = 'Using offline game list';
+        if (!hasVisibleGames) {
+          _games = fallbackGames;
+        }
+        _gamesError = hasVisibleGames ? null : 'Using offline game list';
         _isLoadingGames = false;
       });
     }
@@ -717,18 +1391,175 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
       // Save back verified list to prefs
       await prefs.setStringList('downloaded_roms', verifiedList.toList());
 
+      if (!mounted) return;
       setState(() {
         _downloadedGames.addAll(verifiedList);
         _isLoadingSaved = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _isLoadingSaved = false;
       });
     }
   }
 
-  Future<void> _downloadAndPlay(HomebrewGame game) async {
+  HomebrewGame? _bestFastDownloadTarget() {
+    final candidates =
+        _games
+            .where(
+              (game) =>
+                  game.hasDirectDownload &&
+                  !_downloadedGames.contains(game.title) &&
+                  !_downloadProgress.containsKey(game.title),
+            )
+            .toList()
+          ..sort((a, b) => b.rating.compareTo(a.rating));
+
+    if (candidates.isEmpty) return null;
+    if (_selectedCategory == 'All' ||
+        _selectedCategory == _downloadedGamesFilter) {
+      return candidates.first;
+    }
+    return candidates.firstWhere(
+      (game) => game.category == _selectedCategory,
+      orElse: () => candidates.first,
+    );
+  }
+
+  Future<void> _startBestBoostedDownload() async {
+    final game = _bestFastDownloadTarget();
+    if (game == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No downloadable games available now.')),
+      );
+      return;
+    }
+    await _startBoostedDownload(game);
+  }
+
+  Future<void> _startBoostedDownload(HomebrewGame game) async {
+    if (_fastDownloadInProgress || _downloadProgress.containsKey(game.title)) {
+      return;
+    }
+    if (_downloadedGames.contains(game.title) || !game.hasDirectDownload) {
+      await _downloadAndPlay(game);
+      return;
+    }
+
+    setState(() => _fastDownloadInProgress = true);
+    try {
+      final earned = _adConfig.fastDownloadRewardedEnabled
+          ? await AdService.instance.showRewardedAd(
+              context: context,
+              unavailableMessage:
+                  'Fast download ad is loading. Try again soon.',
+            )
+          : true;
+      if (!mounted || !earned) return;
+
+      setState(() {
+        _boostedDownloads.add(game.title);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Fast download unlocked for "${game.title}".'),
+          backgroundColor: const Color(0xFFFFCF5A),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      await _downloadAndPlay(game, boosted: true);
+    } finally {
+      if (mounted) {
+        setState(() => _fastDownloadInProgress = false);
+      }
+    }
+  }
+
+  List<HomebrewGame> _featuredSuggestions() {
+    final candidates =
+        _games
+            .where(
+              (game) =>
+                  game.hasDirectDownload &&
+                  !_downloadedGames.contains(game.title) &&
+                  !_downloadProgress.containsKey(game.title),
+            )
+            .toList()
+          ..sort((a, b) => b.rating.compareTo(a.rating));
+
+    if (_selectedCategory == 'All' ||
+        _selectedCategory == _downloadedGamesFilter) {
+      return candidates.take(4).toList();
+    }
+
+    final categoryMatches = candidates
+        .where((game) => game.category == _selectedCategory)
+        .toList();
+    final otherMatches = candidates
+        .where((game) => game.category != _selectedCategory)
+        .toList();
+    return [...categoryMatches, ...otherMatches].take(4).toList();
+  }
+
+  Future<void> _showRewardedFeaturedSuggestions() async {
+    if (_featuredUnlockInProgress) return;
+    setState(() => _featuredUnlockInProgress = true);
+
+    try {
+      if (!_hasFeaturedUnlock) {
+        final earned = _adConfig.featuredPicksRewardedEnabled
+            ? await AdService.instance.showRewardedAd(
+                context: context,
+                unavailableMessage:
+                    'Featured picks ad is loading. Try again soon.',
+              )
+            : true;
+        if (!mounted || !earned) return;
+
+        final unlockedUntil = DateTime.now().add(
+          Duration(minutes: AdService.instance.config.featuredUnlockMinutes),
+        );
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setInt(
+          'featured_picks_unlocked_until',
+          unlockedUntil.millisecondsSinceEpoch,
+        );
+        if (!mounted) return;
+        setState(() {
+          _featuredUnlockedUntil = unlockedUntil;
+        });
+      }
+
+      final suggestions = _featuredSuggestions();
+      if (suggestions.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No featured suggestions available now.'),
+          ),
+        );
+        return;
+      }
+
+      await showModalBottomSheet<void>(
+        context: context,
+        backgroundColor: Colors.transparent,
+        isScrollControlled: true,
+        builder: (sheetContext) {
+          return _buildFeaturedSuggestionSheet(sheetContext, suggestions);
+        },
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _featuredUnlockInProgress = false);
+      }
+    }
+  }
+
+  Future<void> _downloadAndPlay(
+    HomebrewGame game, {
+    bool boosted = false,
+  }) async {
     if (!game.hasDirectDownload) {
       await _openOfficialPage(game);
       return;
@@ -741,7 +1572,7 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
     if (_downloadedGames.contains(title)) {
       if (await File(localPath).exists()) {
         // Direct play
-        _playGame(localPath);
+        await _playGame(localPath, coverUrl: game.coverUrl);
         return;
       }
 
@@ -749,6 +1580,7 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
       final savedList = prefs.getStringList('downloaded_roms') ?? [];
       savedList.remove(title);
       await prefs.setStringList('downloaded_roms', savedList);
+      if (!mounted) return;
       setState(() {
         _downloadedGames.remove(title);
       });
@@ -756,8 +1588,12 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
 
     if (_downloadProgress.containsKey(title)) return; // Already downloading
 
+    if (!mounted) return;
     setState(() {
       _downloadProgress[title] = 0.0;
+      if (boosted) {
+        _boostedDownloads.add(title);
+      }
     });
 
     try {
@@ -767,23 +1603,40 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
 
       if (response.statusCode == 200) {
         final file = File(localPath);
-        final bytes = <int>[];
         final total = response.contentLength;
         int received = 0;
 
-        await response.forEach((chunk) {
-          bytes.addAll(chunk);
+        void updateProgress(List<int> chunk) {
           received += chunk.length;
+          if (!mounted) return;
           setState(() {
             _downloadProgress[title] = total > 0 ? (received / total) : 0.5;
           });
-        });
+        }
 
-        if (game.isZipDownload) {
-          final gbaBytes = _extractGbaFromZip(bytes);
-          await file.writeAsBytes(gbaBytes);
+        if (boosted && !game.isZipDownload) {
+          final sink = file.openWrite();
+          try {
+            await for (final chunk in response) {
+              sink.add(chunk);
+              updateProgress(chunk);
+            }
+          } finally {
+            await sink.close();
+          }
         } else {
-          await file.writeAsBytes(bytes);
+          final bytes = <int>[];
+          await for (final chunk in response) {
+            bytes.addAll(chunk);
+            updateProgress(chunk);
+          }
+
+          if (game.isZipDownload) {
+            final gbaBytes = _extractGbaFromZip(bytes);
+            await file.writeAsBytes(gbaBytes);
+          } else {
+            await file.writeAsBytes(bytes);
+          }
         }
 
         final prefs = await SharedPreferences.getInstance();
@@ -793,9 +1646,11 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
           await prefs.setStringList('downloaded_roms', savedList);
         }
 
+        if (!mounted) return;
         setState(() {
           _downloadProgress.remove(title);
           _downloadedGames.add(title);
+          _boostedDownloads.remove(title);
         });
         AdService.instance.markDownloadCompleted();
 
@@ -811,9 +1666,12 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
         throw Exception('Server returned code ${response.statusCode}');
       }
     } catch (e) {
-      setState(() {
-        _downloadProgress.remove(title);
-      });
+      if (mounted) {
+        setState(() {
+          _downloadProgress.remove(title);
+          _boostedDownloads.remove(title);
+        });
+      }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -841,11 +1699,21 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
     return gbaFile.readBytes()!;
   }
 
-  void _playGame(String romPath) {
-    Navigator.of(
+  Future<void> _playGame(String romPath, {String? coverUrl}) async {
+    AdService.instance.showActionInterstitial(
+      placementEnabled: _adConfig.discoverActionInterstitialEnabled,
+    );
+    await Navigator.of(
       context,
       rootNavigator: true,
-    ).push(_buildEmulatorRoute(romPath));
+    ).push(_buildEmulatorRoute(romPath, coverUrl: coverUrl));
+    if (_adConfig.playExitInterstitialEnabled) {
+      AdService.instance.showInterstitialWhenReady(
+        minInterval: Duration(
+          seconds: _adConfig.playExitInterstitialCooldownSeconds,
+        ),
+      );
+    }
   }
 
   Future<void> _openOfficialPage(HomebrewGame game) async {
@@ -866,8 +1734,10 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
     // Categories List
     final List<String> categories = [
       'All',
+      _downloadedGamesFilter,
       ..._games.map((game) => game.category).toSet(),
     ];
+    final isDownloadedTab = _selectedCategory == _downloadedGamesFilter;
 
     // Filter games
     final filteredGames = _games.where((game) {
@@ -876,13 +1746,16 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
           game.developer.toLowerCase().contains(_searchQuery.toLowerCase()) ||
           game.description.toLowerCase().contains(_searchQuery.toLowerCase());
       final matchesCategory =
-          _selectedCategory == 'All' || game.category == _selectedCategory;
+          _selectedCategory == 'All' ||
+          (isDownloadedTab && _downloadedGames.contains(game.title)) ||
+          game.category == _selectedCategory;
       return matchesSearch && matchesCategory;
     }).toList();
 
     // Featured game: Celeste or Anguna (first one that matches selected category, or default first)
     final hasSearch = _searchQuery.trim().isNotEmpty;
-    final HomebrewGame? featuredGame = !hasSearch && filteredGames.isNotEmpty
+    final HomebrewGame? featuredGame =
+        !hasSearch && !isDownloadedTab && filteredGames.isNotEmpty
         ? filteredGames.first
         : null;
     final remainingGames = featuredGame == null
@@ -916,7 +1789,7 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'Gameboy Advance (GBA) ROMs - Free Emulator',
+                          'GBA Homebrew Emulator',
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: GoogleFonts.jetBrainsMono(
@@ -1052,7 +1925,13 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
                   },
                 ),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 12),
+
+              if (!isDownloadedTab) ...[
+                _buildRewardedActionRow(),
+                const SizedBox(height: 20),
+              ] else
+                const SizedBox(height: 8),
 
               // Game lists
               Expanded(
@@ -1063,7 +1942,14 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
                         ),
                       )
                     : filteredGames.isEmpty
-                    ? _buildEmptyState()
+                    ? _buildEmptyState(
+                        isDownloadedTab
+                            ? 'No downloaded games yet'
+                            : 'No games found',
+                        isDownloadedTab
+                            ? 'Download a game from Discover to see it here.'
+                            : 'Try adjusting your search query or filters',
+                      )
                     : ListView(
                         physics: const BouncingScrollPhysics(),
                         children: [
@@ -1088,16 +1974,309 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
                           ],
 
                           // Remaining list
-                          ...List.generate(
-                            remainingGames.length,
-                            (idx) => _buildGameListCard(remainingGames[idx]),
-                          ),
+                          ..._buildGameFeed(remainingGames),
                         ],
                       ),
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildRewardedActionRow() {
+    return Row(
+      children: [
+        Expanded(
+          child: _buildRewardedShortcutButton(
+            label: 'Fast Download',
+            icon: _fastDownloadInProgress
+                ? Icons.hourglass_top_rounded
+                : Icons.bolt_rounded,
+            color: const Color(0xFFFFCF5A),
+            onTap: _fastDownloadInProgress ? null : _startBestBoostedDownload,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _buildRewardedShortcutButton(
+            label: _hasFeaturedUnlock ? 'Picks Unlocked' : 'Featured Picks',
+            icon: _featuredUnlockInProgress
+                ? Icons.hourglass_top_rounded
+                : Icons.auto_awesome_rounded,
+            color: const Color(0xFF73DB9A),
+            onTap: _featuredUnlockInProgress
+                ? null
+                : _showRewardedFeaturedSuggestions,
+          ),
+        ),
+      ],
+    );
+  }
+
+  List<Widget> _buildGameFeed(List<HomebrewGame> games) {
+    final widgets = <Widget>[];
+    final adConfig = AdService.instance.config;
+    final inlineBannerEvery =
+        adConfig.adsEnabled &&
+            adConfig.bannerEnabled &&
+            adConfig.inlineBannerEnabled
+        ? adConfig.inlineBannerEvery
+        : 0;
+    for (var index = 0; index < games.length; index++) {
+      widgets.add(_buildGameListCard(games[index]));
+      final shouldInsertAd =
+          inlineBannerEvery > 0 &&
+          (index + 1) % inlineBannerEvery == 0 &&
+          index != games.length - 1;
+      if (shouldInsertAd) {
+        widgets
+          ..add(_buildInlineAdSlot())
+          ..add(const SizedBox(height: 16));
+      }
+    }
+    return widgets;
+  }
+
+  Widget _buildInlineAdSlot() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.035),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+      ),
+      child: const AdBanner(),
+    );
+  }
+
+  Widget _buildRewardedShortcutButton({
+    required String label,
+    required IconData icon,
+    required Color color,
+    required VoidCallback? onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 160),
+        opacity: onTap == null ? 0.62 : 1,
+        child: Container(
+          height: 42,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: color.withValues(alpha: 0.28)),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, color: color, size: 18),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.outfit(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFeaturedSuggestionSheet(
+    BuildContext sheetContext,
+    List<HomebrewGame> suggestions,
+  ) {
+    final maxHeight = MediaQuery.sizeOf(sheetContext).height * 0.72;
+    final maxUnlockMinutes = AdService.instance.config.featuredUnlockMinutes;
+    final unlockMinutes = _featuredUnlockedUntil
+        ?.difference(DateTime.now())
+        .inMinutes
+        .clamp(1, maxUnlockMinutes);
+    return Container(
+      decoration: const BoxDecoration(
+        color: Color(0xFF151026),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: maxHeight),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.auto_awesome_rounded,
+                      color: Color(0xFF73DB9A),
+                      size: 22,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Featured Picks',
+                        style: GoogleFonts.outfit(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.of(sheetContext).pop(),
+                      icon: const Icon(Icons.close_rounded),
+                      color: Colors.white60,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                if (unlockMinutes != null) ...[
+                  Text(
+                    'Unlocked for $unlockMinutes min',
+                    style: GoogleFonts.jetBrainsMono(
+                      color: Colors.white.withValues(alpha: 0.45),
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                Flexible(
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: suggestions.length,
+                    separatorBuilder: (context, index) =>
+                        const SizedBox(height: 10),
+                    itemBuilder: (context, index) {
+                      return _buildFeaturedSuggestionTile(
+                        sheetContext,
+                        suggestions[index],
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFeaturedSuggestionTile(
+    BuildContext sheetContext,
+    HomebrewGame game,
+  ) {
+    final isDownloading = _downloadProgress.containsKey(game.title);
+    final progress = _downloadProgress[game.title] ?? 0.0;
+
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Row(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: SizedBox(
+              width: 54,
+              height: 54,
+              child: CachedNetworkImage(
+                imageUrl: game.coverUrl,
+                fit: BoxFit.cover,
+                placeholder: (context, url) =>
+                    Container(color: const Color(0xFF0B0914)),
+                errorWidget: (context, url, error) => Container(
+                  color: const Color(0xFF0B0914),
+                  child: const Icon(
+                    Icons.sports_esports_rounded,
+                    color: Colors.white38,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  game.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.outfit(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  '${game.category} • ${game.fileSize} • ${game.rating}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.outfit(
+                    color: Colors.white54,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          FilledButton.icon(
+            onPressed: isDownloading
+                ? null
+                : () {
+                    Navigator.of(sheetContext).pop();
+                    AdService.instance.showActionInterstitial(
+                      placementEnabled:
+                          _adConfig.discoverActionInterstitialEnabled,
+                    );
+                    unawaited(
+                      _downloadAndPlay(game, boosted: _hasFeaturedUnlock),
+                    );
+                  },
+            icon: Icon(
+              isDownloading
+                  ? Icons.downloading_rounded
+                  : Icons.cloud_download_rounded,
+              size: 16,
+            ),
+            label: Text(isDownloading ? '${(progress * 100).toInt()}%' : 'Get'),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF73DB9A),
+              foregroundColor: Colors.black,
+              disabledBackgroundColor: Colors.white12,
+              disabledForegroundColor: Colors.white54,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+              textStyle: GoogleFonts.outfit(
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1133,7 +2312,7 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
     );
   }
 
-  Widget _buildEmptyState() {
+  Widget _buildEmptyState(String title, String subtitle) {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -1145,7 +2324,7 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
           ),
           const SizedBox(height: 16),
           Text(
-            'No games found',
+            title,
             style: GoogleFonts.outfit(
               fontSize: 18,
               fontWeight: FontWeight.bold,
@@ -1154,7 +2333,7 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Try adjusting your search query or filters',
+            subtitle,
             style: GoogleFonts.outfit(fontSize: 14, color: Colors.white38),
           ),
         ],
@@ -1403,37 +2582,47 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(
-                                  0xFF73DB9A,
-                                ).withOpacity(0.12),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text(
-                                game.category.toUpperCase(),
-                                style: GoogleFonts.jetBrainsMono(
-                                  fontSize: 8,
-                                  fontWeight: FontWeight.bold,
-                                  color: const Color(0xFF73DB9A),
+                        Flexible(
+                          child: Row(
+                            children: [
+                              Flexible(
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: const Color(
+                                      0xFF73DB9A,
+                                    ).withOpacity(0.12),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    game.category.toUpperCase(),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: GoogleFonts.jetBrainsMono(
+                                      fontSize: 8,
+                                      fontWeight: FontWeight.bold,
+                                      color: const Color(0xFF73DB9A),
+                                    ),
+                                  ),
                                 ),
                               ),
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              game.fileSize,
-                              style: GoogleFonts.outfit(
-                                fontSize: 11,
-                                color: Colors.white38,
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: Text(
+                                  game.fileSize,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 11,
+                                    color: Colors.white38,
+                                  ),
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                         // Download/Play button
                         _buildActionButton(
@@ -1462,6 +2651,7 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
     double progress, {
     required bool isFeatured,
   }) {
+    final isBoosted = _boostedDownloads.contains(game.title);
     if (isDownloading) {
       return Container(
         width: isFeatured ? 80 : 70,
@@ -1476,7 +2666,9 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
               child: CircularProgressIndicator(
                 value: progress,
                 strokeWidth: 2,
-                color: isFeatured ? Colors.white : const Color(0xFF9D4EDD),
+                color: isBoosted
+                    ? const Color(0xFFFFCF5A)
+                    : (isFeatured ? Colors.white : const Color(0xFF9D4EDD)),
               ),
             ),
             const SizedBox(height: 4),
@@ -1484,7 +2676,9 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
               '${(progress * 100).toInt()}%',
               style: GoogleFonts.jetBrainsMono(
                 fontSize: 9,
-                color: isFeatured ? Colors.white70 : const Color(0xFF9D4EDD),
+                color: isBoosted
+                    ? const Color(0xFFFFCF5A)
+                    : (isFeatured ? Colors.white70 : const Color(0xFF9D4EDD)),
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -1509,8 +2703,13 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
               ? Icons.open_in_new_rounded
               : Icons.cloud_download_rounded);
 
-    return GestureDetector(
-      onTap: () => _downloadAndPlay(game),
+    final primaryButton = GestureDetector(
+      onTap: () {
+        AdService.instance.showActionInterstitial(
+          placementEnabled: _adConfig.discoverActionInterstitialEnabled,
+        );
+        unawaited(_downloadAndPlay(game));
+      },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         padding: EdgeInsets.symmetric(
@@ -1523,7 +2722,7 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
           boxShadow: isFeatured
               ? [
                   BoxShadow(
-                    color: buttonColor.withOpacity(0.3),
+                    color: buttonColor.withValues(alpha: 0.3),
                     blurRadius: 8,
                     offset: const Offset(0, 2),
                   ),
@@ -1547,6 +2746,58 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
         ),
       ),
     );
+
+    final canBoost = game.hasDirectDownload && !isDownloaded;
+    if (!canBoost) return primaryButton;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        primaryButton,
+        SizedBox(width: isFeatured ? 8 : 6),
+        _buildBoostDownloadButton(game, isFeatured: isFeatured),
+      ],
+    );
+  }
+
+  Widget _buildBoostDownloadButton(
+    HomebrewGame game, {
+    required bool isFeatured,
+  }) {
+    final isBusy =
+        _fastDownloadInProgress || _downloadProgress.containsKey(game.title);
+    return Tooltip(
+      message: 'Watch ad for fast download',
+      child: GestureDetector(
+        onTap: isBusy ? null : () => _startBoostedDownload(game),
+        child: AnimatedOpacity(
+          duration: const Duration(milliseconds: 160),
+          opacity: isBusy ? 0.55 : 1,
+          child: Container(
+            width: isFeatured ? 38 : 34,
+            height: isFeatured ? 38 : 34,
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFCF5A),
+              shape: BoxShape.circle,
+              boxShadow: isFeatured
+                  ? [
+                      BoxShadow(
+                        color: const Color(0xFFFFCF5A).withValues(alpha: 0.35),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ]
+                  : null,
+            ),
+            child: Icon(
+              isBusy ? Icons.hourglass_top_rounded : Icons.bolt_rounded,
+              color: Colors.black,
+              size: isFeatured ? 19 : 17,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -1564,6 +2815,7 @@ class ImportedGamesScreen extends StatefulWidget {
 class _ImportedGamesScreenState extends State<ImportedGamesScreen> {
   List<ImportedGame> _games = [];
   bool _isLoading = true;
+  RemoteAdConfig get _adConfig => AdService.instance.config;
 
   @override
   void initState() {
@@ -1603,11 +2855,21 @@ class _ImportedGamesScreenState extends State<ImportedGamesScreen> {
     });
   }
 
-  void _playGame(ImportedGame game) {
-    Navigator.of(
+  Future<void> _playGame(ImportedGame game) async {
+    AdService.instance.showActionInterstitial(
+      placementEnabled: _adConfig.savedGamePlayInterstitialEnabled,
+    );
+    await Navigator.of(
       context,
       rootNavigator: true,
     ).push(_buildEmulatorRoute(game.path));
+    if (_adConfig.playExitInterstitialEnabled) {
+      AdService.instance.showInterstitialWhenReady(
+        minInterval: Duration(
+          seconds: _adConfig.playExitInterstitialCooldownSeconds,
+        ),
+      );
+    }
   }
 
   Future<void> _removeGame(ImportedGame game) async {
@@ -1810,6 +3072,8 @@ class ConsoleConfigScreen extends StatefulWidget {
 }
 
 class _ConsoleConfigScreenState extends State<ConsoleConfigScreen> {
+  RemoteAdConfig get _adConfig => AdService.instance.config;
+
   Future<void> _joinDiscord() async {
     Uri url;
     try {
@@ -1842,10 +3106,12 @@ class _ConsoleConfigScreenState extends State<ConsoleConfigScreen> {
 
   Future<void> _importGame() async {
     try {
+      await AdService.instance.pauseBannerForExternalUi();
       final result = await FilePicker.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['gba', 'zip', 'gbc', 'gb', 'nes'],
+        allowedExtensions: ['gba', 'zip'],
       );
+      AdService.instance.resumeBanner();
       if (result != null && result.files.single.path != null) {
         final pickedFile = result.files.single;
         final sourcePath = pickedFile.path!;
@@ -1892,6 +3158,7 @@ class _ConsoleConfigScreenState extends State<ConsoleConfigScreen> {
         });
       }
     } catch (e) {
+      AdService.instance.resumeBanner();
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
@@ -1903,10 +3170,20 @@ class _ConsoleConfigScreenState extends State<ConsoleConfigScreen> {
     String playablePath,
     ImportedGame? importedGame,
   ) async {
+    AdService.instance.showActionInterstitial(
+      placementEnabled: _adConfig.importedGamePlayInterstitialEnabled,
+    );
     await Navigator.of(
       context,
       rootNavigator: true,
     ).push(_buildEmulatorRoute(playablePath));
+    if (_adConfig.playExitInterstitialEnabled) {
+      AdService.instance.showInterstitialWhenReady(
+        minInterval: Duration(
+          seconds: _adConfig.playExitInterstitialCooldownSeconds,
+        ),
+      );
+    }
 
     if (!mounted || importedGame == null) return;
     widget.onGameImported();
@@ -2041,7 +3318,7 @@ class _ConsoleConfigScreenState extends State<ConsoleConfigScreen> {
   @override
   Widget build(BuildContext context) {
     return SafeArea(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -2081,7 +3358,7 @@ class _ConsoleConfigScreenState extends State<ConsoleConfigScreen> {
               onTap: () async {
                 final prefs = await SharedPreferences.getInstance();
                 await prefs.setBool('show_onboarding', true);
-                if (!mounted) return;
+                if (!context.mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                     content: Text('Tutorial reset! Please restart the app.'),
@@ -2104,7 +3381,13 @@ class _ConsoleConfigScreenState extends State<ConsoleConfigScreen> {
     required VoidCallback onTap,
   }) {
     return GestureDetector(
-      onTap: onTap,
+      onTap: () {
+        AdService.instance.showActionInterstitial(
+          placementEnabled:
+              AdService.instance.config.consoleActionInterstitialEnabled,
+        );
+        onTap();
+      },
       child: Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
@@ -2167,10 +3450,16 @@ class _ConsoleConfigScreenState extends State<ConsoleConfigScreen> {
 // ==========================================
 
 class EmulatorScreen extends StatefulWidget {
-  const EmulatorScreen({super.key, required this.romPath, required this.theme});
+  const EmulatorScreen({
+    super.key,
+    required this.romPath,
+    required this.theme,
+    this.coverUrl,
+  });
 
   final String romPath;
   final EmulatorTheme theme;
+  final String? coverUrl;
 
   @override
   State<EmulatorScreen> createState() => _EmulatorScreenState();
@@ -2180,6 +3469,8 @@ class _EmulatorScreenState extends State<EmulatorScreen> {
   late final WebViewController _controller;
   HttpServer? _romServer;
   bool _loading = true;
+  late GamepadSkin _gamepadSkin;
+  bool _skinUnlockInProgress = false;
 
   static const int _inputB = 0;
   static const int _inputSelect = 2;
@@ -2197,10 +3488,24 @@ class _EmulatorScreenState extends State<EmulatorScreen> {
   @override
   void initState() {
     super.initState();
+    AdService.instance.setGameplayActive(true);
+    _gamepadSkin = _globalSelectedGamepadSkin;
     final file = File(widget.romPath);
 
     _controller = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted);
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..addJavaScriptChannel(
+        'FlutterSaveStateChannel',
+        onMessageReceived: (JavaScriptMessage message) {
+          _saveDataToFile(message.message, widget.romPath + '.state');
+        },
+      )
+      ..addJavaScriptChannel(
+        'FlutterSaveUpdateChannel',
+        onMessageReceived: (JavaScriptMessage message) {
+          _saveDataToFile(message.message, widget.romPath + '.sav');
+        },
+      );
     _controller.setOnConsoleMessage((message) {
       debugPrint('EmulatorJS: ${message.level.name}: ${message.message}');
     });
@@ -2218,7 +3523,7 @@ class _EmulatorScreenState extends State<EmulatorScreen> {
           if (mounted) setState(() => _loading = false);
         },
         onSslAuthError: (SslAuthError error) {
-          error.proceed();
+          error.cancel();
         },
       ),
     );
@@ -2228,6 +3533,7 @@ class _EmulatorScreenState extends State<EmulatorScreen> {
 
   @override
   void dispose() {
+    AdService.instance.setGameplayActive(false);
     unawaited(_romServer?.close(force: true));
     super.dispose();
   }
@@ -2247,7 +3553,15 @@ class _EmulatorScreenState extends State<EmulatorScreen> {
     final baseUrl = 'http://127.0.0.1:${server.port}/';
     final romUrl = '${baseUrl}rom.gba';
 
-    await _controller.loadHtmlString(_emulatorHtml(romUrl), baseUrl: baseUrl);
+    final saveFile = File(romFile.path + '.sav');
+    final stateFile = File(romFile.path + '.state');
+    final hasSave = await saveFile.exists();
+    final hasState = await stateFile.exists();
+
+    await _controller.loadHtmlString(
+      _emulatorHtml(romUrl, baseUrl, hasSave: hasSave, hasState: hasState),
+      baseUrl: baseUrl,
+    );
   }
 
   Future<HttpServer> _startRomServer(File romFile) async {
@@ -2283,6 +3597,38 @@ class _EmulatorScreenState extends State<EmulatorScreen> {
 
             if (request.method != 'HEAD') {
               await response.addStream(romFile.openRead());
+            }
+            await response.close();
+          } else if (request.uri.path == '/save.sav') {
+            final saveFile = File(romFile.path + '.sav');
+            if (!await saveFile.exists()) {
+              response.statusCode = HttpStatus.notFound;
+              await response.close();
+              return;
+            }
+
+            final fileLength = await saveFile.length();
+            response.headers.contentType = ContentType.binary;
+            response.headers.contentLength = fileLength;
+
+            if (request.method != 'HEAD') {
+              await response.addStream(saveFile.openRead());
+            }
+            await response.close();
+          } else if (request.uri.path == '/state.state') {
+            final stateFile = File(romFile.path + '.state');
+            if (!await stateFile.exists()) {
+              response.statusCode = HttpStatus.notFound;
+              await response.close();
+              return;
+            }
+
+            final fileLength = await stateFile.length();
+            response.headers.contentType = ContentType.binary;
+            response.headers.contentLength = fileLength;
+
+            if (request.method != 'HEAD') {
+              await response.addStream(stateFile.openRead());
             }
             await response.close();
           } else if (request.uri.path.startsWith('/emulatorjs/')) {
@@ -2374,6 +3720,17 @@ class _EmulatorScreenState extends State<EmulatorScreen> {
     });
   }
 
+  Future<void> _saveDataToFile(String base64Data, String filePath) async {
+    try {
+      final bytes = base64.decode(base64Data);
+      final file = File(filePath);
+      await file.writeAsBytes(bytes);
+      debugPrint('Successfully saved game data to $filePath');
+    } catch (e) {
+      debugPrint('Error saving game data to $filePath: $e');
+    }
+  }
+
   void _triggerSave() {
     _tapInput(_inputQuickSave);
   }
@@ -2391,7 +3748,50 @@ class _EmulatorScreenState extends State<EmulatorScreen> {
     ''');
   }
 
-  String _emulatorHtml(String romUrl) {
+  Future<void> _unlockNextGamepadSkin() async {
+    if (_skinUnlockInProgress) return;
+    setState(() => _skinUnlockInProgress = true);
+
+    try {
+      final earned = AdService.instance.config.skinRewardedEnabled
+          ? await AdService.instance.showRewardedAd(
+              context: context,
+              unavailableMessage: 'Skin ad is loading. Try again soon.',
+            )
+          : true;
+      if (!mounted || !earned) return;
+
+      final currentIndex = availableGamepadSkins.indexWhere(
+        (skin) => skin.id == _gamepadSkin.id,
+      );
+      final nextIndex = (currentIndex + 1) % availableGamepadSkins.length;
+      final nextSkin = availableGamepadSkins[nextIndex];
+
+      setState(() {
+        _gamepadSkin = nextSkin;
+        _globalSelectedGamepadSkin = nextSkin;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${nextSkin.name} controller skin applied.'),
+          backgroundColor: nextSkin.accent,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _skinUnlockInProgress = false);
+      }
+    }
+  }
+
+  String _emulatorHtml(
+    String romUrl,
+    String baseUrl, {
+    required bool hasSave,
+    required bool hasState,
+  }) {
     final title = widget.romPath.split('/').last;
     final dataPath = 'emulatorjs/';
 
@@ -2463,6 +3863,36 @@ class _EmulatorScreenState extends State<EmulatorScreen> {
     window.EJS_DEBUG_XX = true; // Load bundled src files instead of missing minified assets.
     window.EJS_language = "en-US";
     window.EJS_disableAutoLang = false;
+    ${hasSave ? "window.EJS_loadSaveURL = '${baseUrl}save.sav';" : ""}
+    ${hasState ? "window.EJS_loadStateURL = '${baseUrl}state.state';" : ""}
+    window.EJS_onSaveState = function(args) {
+      var saveState = args[1];
+      if (!saveState) return;
+      var binary = '';
+      var bytes = new Uint8Array(saveState);
+      var len = bytes.byteLength;
+      for (var i = 0; i < len; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      var base64 = window.btoa(binary);
+      if (window.FlutterSaveStateChannel) {
+        window.FlutterSaveStateChannel.postMessage(base64);
+      }
+    };
+    window.EJS_onSaveUpdate = function(data) {
+      var save = data.save;
+      if (!save) return;
+      var binary = '';
+      var bytes = new Uint8Array(save);
+      var len = bytes.byteLength;
+      for (var i = 0; i < len; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      var base64 = window.btoa(binary);
+      if (window.FlutterSaveUpdateChannel) {
+        window.FlutterSaveUpdateChannel.postMessage(base64);
+      }
+    };
     window.EJS_onGameStart = function() {
       statusEl = statusEl || document.getElementById('status');
       if (statusEl) statusEl.style.display = 'none';
@@ -2513,11 +3943,7 @@ class _EmulatorScreenState extends State<EmulatorScreen> {
                       const SizedBox(width: 16),
                       Expanded(
                         child: Text(
-                          widget.romPath
-                              .split('/')
-                              .last
-                              .replaceAll('.gba', '')
-                              .replaceAll('.zip', ''),
+                          _cleanGameTitle(widget.romPath.split('/').last),
                           overflow: TextOverflow.ellipsis,
                           style: GoogleFonts.outfit(
                             fontSize: 18,
@@ -2548,126 +3974,188 @@ class _EmulatorScreenState extends State<EmulatorScreen> {
 
                 // Gamepad area taking the remaining space
                 Expanded(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 24.0,
-                      vertical: 16.0,
-                    ),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        // Row 1: Save, Load, Menu action buttons
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            GamepadActionButton(
-                              icon: Icons.save_outlined,
-                              label: 'Save',
-                              onTap: _triggerSave,
-                            ),
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                GamepadActionButton(
-                                  icon: Icons.unarchive_outlined,
-                                  label: 'Load',
-                                  onTap: _triggerLoad,
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      return Align(
+                        alignment: const Alignment(
+                          0,
+                          -0.2,
+                        ), // Align slightly upwards
+                        child: FittedBox(
+                          fit: BoxFit.contain,
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 220),
+                            width: 380,
+                            height: 290,
+                            decoration: BoxDecoration(
+                              color: _gamepadSkin.panel.withValues(alpha: 0.62),
+                              borderRadius: BorderRadius.circular(28),
+                              border: Border.all(
+                                color: _gamepadSkin.border.withValues(
+                                  alpha: 0.3,
                                 ),
-                                const SizedBox(width: 16),
-                                GamepadActionButton(
-                                  icon: Icons.more_vert_rounded,
-                                  onTap: _triggerMenu,
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-
-                        // Row 2: L, SELECT, START, R shoulder & command buttons
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            RectGamepadButton(
-                              label: 'L',
-                              inputValue: _inputL,
-                              onInput: _sendInput,
-                              width: 55,
-                            ),
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                RectGamepadButton(
-                                  label: 'SELECT',
-                                  inputValue: _inputSelect,
-                                  onInput: _sendInput,
-                                  width: 80,
-                                ),
-                                const SizedBox(width: 12),
-                                RectGamepadButton(
-                                  label: 'START',
-                                  inputValue: _inputStart,
-                                  onInput: _sendInput,
-                                  width: 80,
-                                ),
-                              ],
-                            ),
-                            RectGamepadButton(
-                              label: 'R',
-                              inputValue: _inputR,
-                              onInput: _sendInput,
-                              width: 55,
-                            ),
-                          ],
-                        ),
-
-                        // Row 3: D-pad (left) & A/B Buttons (right)
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            // D-Pad
-                            DPadWidget(
-                              upInput: _inputUp,
-                              downInput: _inputDown,
-                              leftInput: _inputLeft,
-                              rightInput: _inputRight,
-                              onInput: _sendInput,
-                            ),
-
-                            // A/B Action Buttons Stacked in diagonal layout
-                            SizedBox(
-                              width: 160,
-                              height: 160,
-                              child: Stack(
-                                children: [
-                                  // Button B (Lower Left)
-                                  Positioned(
-                                    bottom: 12,
-                                    left: 8,
-                                    child: GamepadButton(
-                                      label: 'B',
-                                      inputValue: _inputB,
-                                      onInput: _sendInput,
-                                    ),
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: _gamepadSkin.accent.withValues(
+                                    alpha: 0.14,
                                   ),
-                                  // Button A (Upper Right)
-                                  Positioned(
-                                    top: 12,
-                                    right: 8,
-                                    child: GamepadButton(
-                                      label: 'A',
-                                      inputValue: _inputA,
-                                      onInput: _sendInput,
-                                    ),
+                                  blurRadius: 24,
+                                  spreadRadius: 1,
+                                ),
+                              ],
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 24.0,
+                                vertical: 8.0,
+                              ),
+                              child: Column(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  // Row 1: Save, Load, Menu action buttons
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      GamepadActionButton(
+                                        icon: Icons.save_outlined,
+                                        label: 'Save',
+                                        onTap: _triggerSave,
+                                        skin: _gamepadSkin,
+                                      ),
+                                      Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          GamepadActionButton(
+                                            icon: Icons.unarchive_outlined,
+                                            label: 'Load',
+                                            onTap: _triggerLoad,
+                                            skin: _gamepadSkin,
+                                          ),
+                                          const SizedBox(width: 10),
+                                          GamepadActionButton(
+                                            icon: _skinUnlockInProgress
+                                                ? Icons.hourglass_top_rounded
+                                                : Icons.palette_outlined,
+                                            label: 'Skin',
+                                            onTap: _skinUnlockInProgress
+                                                ? () {}
+                                                : _unlockNextGamepadSkin,
+                                            skin: _gamepadSkin,
+                                          ),
+                                          const SizedBox(width: 10),
+                                          GamepadActionButton(
+                                            icon: Icons.more_vert_rounded,
+                                            onTap: _triggerMenu,
+                                            skin: _gamepadSkin,
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+
+                                  // Row 2: L, SELECT, START, R shoulder & command buttons
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      RectGamepadButton(
+                                        label: 'L',
+                                        inputValue: _inputL,
+                                        onInput: _sendInput,
+                                        width: 55,
+                                        skin: _gamepadSkin,
+                                      ),
+                                      Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          RectGamepadButton(
+                                            label: 'SELECT',
+                                            inputValue: _inputSelect,
+                                            onInput: _sendInput,
+                                            width: 80,
+                                            skin: _gamepadSkin,
+                                          ),
+                                          const SizedBox(width: 12),
+                                          RectGamepadButton(
+                                            label: 'START',
+                                            inputValue: _inputStart,
+                                            onInput: _sendInput,
+                                            width: 80,
+                                            skin: _gamepadSkin,
+                                          ),
+                                        ],
+                                      ),
+                                      RectGamepadButton(
+                                        label: 'R',
+                                        inputValue: _inputR,
+                                        onInput: _sendInput,
+                                        width: 55,
+                                        skin: _gamepadSkin,
+                                      ),
+                                    ],
+                                  ),
+
+                                  // Row 3: D-pad (left) & A/B Buttons (right)
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      // D-Pad
+                                      DPadWidget(
+                                        upInput: _inputUp,
+                                        downInput: _inputDown,
+                                        leftInput: _inputLeft,
+                                        rightInput: _inputRight,
+                                        onInput: _sendInput,
+                                        skin: _gamepadSkin,
+                                      ),
+
+                                      // A/B Action Buttons Stacked in diagonal layout
+                                      SizedBox(
+                                        width: 160,
+                                        height: 160,
+                                        child: Stack(
+                                          children: [
+                                            // Button B (Lower Left)
+                                            Positioned(
+                                              bottom: 12,
+                                              left: 8,
+                                              child: GamepadButton(
+                                                label: 'B',
+                                                inputValue: _inputB,
+                                                onInput: _sendInput,
+                                                skin: _gamepadSkin,
+                                              ),
+                                            ),
+                                            // Button A (Upper Right)
+                                            Positioned(
+                                              top: 12,
+                                              right: 8,
+                                              child: GamepadButton(
+                                                label: 'A',
+                                                inputValue: _inputA,
+                                                onInput: _sendInput,
+                                                skin: _gamepadSkin,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ],
                               ),
                             ),
-                          ],
+                          ),
                         ),
-                      ],
-                    ),
+                      );
+                    },
                   ),
                 ),
+                const AdBanner(),
               ],
             ),
           ),
@@ -2677,39 +4165,141 @@ class _EmulatorScreenState extends State<EmulatorScreen> {
             Positioned.fill(
               child: Container(
                 color: const Color(0xFF0B0914),
-                child: Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(24),
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: const Color(0xFF9D4EDD).withOpacity(0.1),
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFF9D4EDD).withOpacity(0.3),
-                              blurRadius: 30,
-                            ),
-                          ],
-                        ),
-                        child: const CircularProgressIndicator(
-                          color: Color(0xFFD2BBFF),
-                          strokeWidth: 3,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    // Blurred game cover as background
+                    if (widget.coverUrl != null &&
+                        widget.coverUrl!.isNotEmpty) ...[
+                      Opacity(
+                        opacity: 0.25,
+                        child: Image.network(
+                          widget.coverUrl!,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) =>
+                              const SizedBox(),
                         ),
                       ),
-                      const SizedBox(height: 24),
-                      Text(
-                        'BOOTING ROM...',
-                        style: GoogleFonts.outfit(
-                          color: const Color(0xFFD2BBFF),
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 2,
-                        ),
+                      BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+                        child: Container(color: Colors.black.withOpacity(0.35)),
                       ),
                     ],
-                  ),
+
+                    // Centered Content
+                    Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          // Small Game Poster Card in Center
+                          if (widget.coverUrl != null &&
+                              widget.coverUrl!.isNotEmpty) ...[
+                            Container(
+                              height: 180,
+                              width: 130,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(16),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: const Color(
+                                      0xFF9D4EDD,
+                                    ).withOpacity(0.4),
+                                    blurRadius: 25,
+                                    spreadRadius: 2,
+                                  ),
+                                ],
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(16),
+                                child: Image.network(
+                                  widget.coverUrl!,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) =>
+                                      Container(
+                                        color: const Color(0xFF151026),
+                                        child: const Icon(
+                                          Icons.sports_esports_rounded,
+                                          color: Color(0xFFD2BBFF),
+                                          size: 40,
+                                        ),
+                                      ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 32),
+                          ] else ...[
+                            // Default glowing console icon if no cover image
+                            Container(
+                              padding: const EdgeInsets.all(24),
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: const Color(0xFF9D4EDD).withOpacity(0.1),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: const Color(
+                                      0xFF9D4EDD,
+                                    ).withOpacity(0.3),
+                                    blurRadius: 30,
+                                  ),
+                                ],
+                              ),
+                              child: const Icon(
+                                Icons.sports_esports_rounded,
+                                color: Color(0xFFD2BBFF),
+                                size: 48,
+                              ),
+                            ),
+                            const SizedBox(height: 24),
+                          ],
+
+                          // BOOTING ROM Text
+                          Text(
+                            'BOOTING ROM...',
+                            style: GoogleFonts.outfit(
+                              color: const Color(0xFFD2BBFF),
+                              fontSize: 18,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 3,
+                              shadows: [
+                                const Shadow(
+                                  color: Colors.black54,
+                                  blurRadius: 8,
+                                  offset: Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+
+                          // Progress Loading Bar
+                          SizedBox(
+                            width: 220,
+                            child: Column(
+                              children: [
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(4),
+                                  child: const LinearProgressIndicator(
+                                    color: Color(0xFF00E676),
+                                    backgroundColor: Colors.white12,
+                                    minHeight: 6,
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                Text(
+                                  'Initializing emulator...',
+                                  style: GoogleFonts.outfit(
+                                    color: Colors.white54,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -2729,6 +4319,7 @@ class DPadWidget extends StatefulWidget {
   final int leftInput;
   final int rightInput;
   final void Function(int inputValue, bool isPressed) onInput;
+  final GamepadSkin skin;
 
   const DPadWidget({
     super.key,
@@ -2737,6 +4328,7 @@ class DPadWidget extends StatefulWidget {
     required this.leftInput,
     required this.rightInput,
     required this.onInput,
+    required this.skin,
   });
 
   @override
@@ -2818,7 +4410,10 @@ class _DPadWidgetState extends State<DPadWidget> {
         width: size,
         height: size,
         child: CustomPaint(
-          painter: _DPadPainter(activeDirection: _activeDirection),
+          painter: _DPadPainter(
+            activeDirection: _activeDirection,
+            skin: widget.skin,
+          ),
         ),
       ),
     );
@@ -2827,7 +4422,9 @@ class _DPadWidgetState extends State<DPadWidget> {
 
 class _DPadPainter extends CustomPainter {
   final String? activeDirection;
-  _DPadPainter({this.activeDirection});
+  final GamepadSkin skin;
+
+  _DPadPainter({this.activeDirection, required this.skin});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -2835,12 +4432,12 @@ class _DPadPainter extends CustomPainter {
     final radius = size.width / 2;
 
     final bgPaint = Paint()
-      ..color = Colors.white.withOpacity(0.06)
+      ..color = skin.surface.withValues(alpha: 0.7)
       ..style = PaintingStyle.fill;
     canvas.drawCircle(center, radius, bgPaint);
 
     final borderPaint = Paint()
-      ..color = Colors.white24
+      ..color = skin.border.withValues(alpha: 0.58)
       ..strokeWidth = 2
       ..style = PaintingStyle.stroke;
     canvas.drawCircle(center, radius, borderPaint);
@@ -2865,7 +4462,7 @@ class _DPadPainter extends CustomPainter {
 
     if (activeDirection != null) {
       final activePaint = Paint()
-        ..color = Colors.white.withOpacity(0.12)
+        ..color = skin.pressedSurface.withValues(alpha: 0.62)
         ..style = PaintingStyle.fill;
 
       final activePath = Path();
@@ -2897,7 +4494,7 @@ class _DPadPainter extends CustomPainter {
     canvas.drawPath(crossPath, borderPaint);
 
     final arrowPaint = Paint()
-      ..color = Colors.white24
+      ..color = skin.text.withValues(alpha: 0.44)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.5;
 
@@ -2932,7 +4529,8 @@ class _DPadPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _DPadPainter oldDelegate) =>
-      oldDelegate.activeDirection != activeDirection;
+      oldDelegate.activeDirection != activeDirection ||
+      oldDelegate.skin != skin;
 }
 
 class GamepadButton extends StatefulWidget {
@@ -2940,12 +4538,14 @@ class GamepadButton extends StatefulWidget {
   final int inputValue;
   final void Function(int inputValue, bool isPressed) onInput;
   final double size;
+  final GamepadSkin skin;
 
   const GamepadButton({
     super.key,
     required this.label,
     required this.inputValue,
     required this.onInput,
+    required this.skin,
     this.size = 64.0,
   });
 
@@ -2976,10 +4576,21 @@ class _GamepadButtonState extends State<GamepadButton> {
         height: widget.size,
         decoration: BoxDecoration(
           color: _isPressed
-              ? Colors.white.withOpacity(0.25)
-              : Colors.white.withOpacity(0.12),
+              ? widget.skin.pressedSurface.withValues(alpha: 0.86)
+              : widget.skin.surface.withValues(alpha: 0.82),
           shape: BoxShape.circle,
-          border: Border.all(color: Colors.white30, width: 2),
+          border: Border.all(
+            color: widget.skin.border.withValues(alpha: 0.72),
+            width: 2,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: widget.skin.accent.withValues(
+                alpha: _isPressed ? 0.32 : 0.16,
+              ),
+              blurRadius: _isPressed ? 16 : 10,
+            ),
+          ],
         ),
         alignment: Alignment.center,
         child: Text(
@@ -2987,7 +4598,7 @@ class _GamepadButtonState extends State<GamepadButton> {
           style: GoogleFonts.outfit(
             fontSize: 20,
             fontWeight: FontWeight.bold,
-            color: Colors.white.withOpacity(0.9),
+            color: widget.skin.text.withValues(alpha: 0.92),
           ),
         ),
       ),
@@ -3001,12 +4612,14 @@ class RectGamepadButton extends StatefulWidget {
   final void Function(int inputValue, bool isPressed) onInput;
   final double width;
   final double height;
+  final GamepadSkin skin;
 
   const RectGamepadButton({
     super.key,
     required this.label,
     required this.inputValue,
     required this.onInput,
+    required this.skin,
     this.width = 80,
     this.height = 40,
   });
@@ -3038,10 +4651,13 @@ class _RectGamepadButtonState extends State<RectGamepadButton> {
         height: widget.height,
         decoration: BoxDecoration(
           color: _isPressed
-              ? Colors.white.withOpacity(0.25)
-              : Colors.white.withOpacity(0.12),
+              ? widget.skin.pressedSurface.withValues(alpha: 0.86)
+              : widget.skin.surface.withValues(alpha: 0.82),
           borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: Colors.white30, width: 1.5),
+          border: Border.all(
+            color: widget.skin.border.withValues(alpha: 0.68),
+            width: 1.5,
+          ),
         ),
         alignment: Alignment.center,
         child: Text(
@@ -3049,7 +4665,7 @@ class _RectGamepadButtonState extends State<RectGamepadButton> {
           style: GoogleFonts.outfit(
             fontSize: widget.label.length > 2 ? 11 : 14,
             fontWeight: FontWeight.bold,
-            color: Colors.white.withOpacity(0.9),
+            color: widget.skin.text.withValues(alpha: 0.92),
           ),
         ),
       ),
@@ -3061,42 +4677,263 @@ class GamepadActionButton extends StatelessWidget {
   final IconData icon;
   final String? label;
   final VoidCallback onTap;
+  final GamepadSkin? skin;
 
   const GamepadActionButton({
     super.key,
     required this.icon,
     this.label,
     required this.onTap,
+    this.skin,
   });
 
   @override
   Widget build(BuildContext context) {
+    final activeSkin = skin ?? availableGamepadSkins.first;
     return GestureDetector(
       onTap: onTap,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            width: 54,
-            height: 54,
+            width: 44,
+            height: 44,
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.08),
+              color: activeSkin.surface.withValues(alpha: 0.68),
               shape: BoxShape.circle,
-              border: Border.all(color: Colors.white24, width: 1.5),
+              border: Border.all(
+                color: activeSkin.border.withValues(alpha: 0.58),
+                width: 1.5,
+              ),
             ),
-            child: Icon(icon, color: Colors.white.withOpacity(0.9), size: 24),
+            child: Icon(
+              icon,
+              color: activeSkin.text.withValues(alpha: 0.9),
+              size: 20,
+            ),
           ),
           if (label != null) ...[
-            const SizedBox(height: 4),
+            const SizedBox(height: 2),
             Text(
               label!,
               style: GoogleFonts.outfit(
-                fontSize: 12,
-                color: Colors.white70,
+                fontSize: 10,
+                color: activeSkin.text.withValues(alpha: 0.76),
                 fontWeight: FontWeight.w600,
               ),
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+// ==========================================
+// SPLASH SCREEN
+// ==========================================
+
+class SplashScreen extends StatefulWidget {
+  const SplashScreen({super.key});
+
+  @override
+  State<SplashScreen> createState() => _SplashScreenState();
+}
+
+class _SplashScreenState extends State<SplashScreen> {
+  double _progress = 0.0;
+  bool _showOnboarding = true;
+
+  @override
+  void initState() {
+    super.initState();
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    unawaited(_prepareAppAndNavigate());
+  }
+
+  Future<void> _prepareAppAndNavigate() async {
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+
+    await _runStartupStep(0.12, () async {
+      await precacheImage(const AssetImage('assets/splash.png'), context);
+    });
+
+    await _runStartupStep(0.36, () async {
+      final prefs = await SharedPreferences.getInstance();
+      _showOnboarding = prefs.getBool('show_onboarding') ?? true;
+    });
+
+    await _runStartupStep(0.56, () async {
+      await AdService.instance.loadRemoteConfig();
+      AdService.instance.preloadInterstitial();
+      await AdService.instance.prepareAppOpenForLaunch();
+    });
+
+    await _runStartupStep(0.78, _warmHomeData);
+
+    await _runStartupStep(1.0, () async {
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      await AdService.instance.showAppOpenIfAvailable(
+        coldStart: true,
+        minInterval: Duration(
+          minutes: AdService.instance.config.appOpenColdStartCooldownMinutes,
+        ),
+      );
+    });
+
+    await _navigateToNextScreen();
+  }
+
+  Future<void> _runStartupStep(
+    double targetProgress,
+    FutureOr<void> Function() action,
+  ) async {
+    try {
+      await Future<void>.sync(
+        action,
+      ).timeout(const Duration(seconds: 5), onTimeout: () {});
+    } catch (_) {
+      // Startup should continue with cached/fallback data if a warmup step fails.
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _progress = targetProgress.clamp(_progress, 1.0);
+    });
+  }
+
+  Future<void> _warmHomeData() async {
+    final prefs = await SharedPreferences.getInstance();
+    final cachedPayload = prefs.getString(_remoteGamesPrefsKey);
+    if (cachedPayload != null && cachedPayload.isNotEmpty) return;
+
+    final client = HttpClient();
+    client.connectionTimeout = const Duration(seconds: 4);
+    try {
+      final request = await client.getUrl(
+        Uri.parse('$_apiBaseUrl/api/app/home'),
+      );
+      request.headers.set(HttpHeaders.cacheControlHeader, 'max-age=300');
+      final response = await request.close();
+      if (response.statusCode != 200) return;
+
+      final body = await response.transform(utf8.decoder).join();
+      final payload = jsonDecode(body) as Map<String, dynamic>;
+      final rawItems = <dynamic>[
+        ...((payload['featured'] as List<dynamic>?) ?? const []),
+        ...((payload['games'] as List<dynamic>?) ?? const []),
+      ];
+      if (rawItems.isNotEmpty) {
+        await prefs.setString(_remoteGamesPrefsKey, jsonEncode(rawItems));
+      }
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  Future<void> _navigateToNextScreen() async {
+    if (!mounted) return;
+
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    if (!mounted) return;
+    Navigator.of(context).pushReplacement(
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            _showOnboarding ? const OnboardingScreen() : const MainTabScreen(),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(opacity: animation, child: child);
+        },
+        transitionDuration: const Duration(milliseconds: 500),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF0B0914),
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          Positioned.fill(
+            child: Image.asset(
+              'assets/splash.png',
+              width: double.infinity,
+              height: double.infinity,
+              fit: BoxFit.cover,
+              alignment: Alignment.center,
+            ),
+          ),
+
+          // Subtle dark gradient overlay
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Colors.black.withOpacity(0.05),
+                    Colors.black.withOpacity(0.12),
+                    Colors.black.withOpacity(0.45),
+                  ],
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                ),
+              ),
+            ),
+          ),
+
+          // Bottom progress indicator
+          Positioned(
+            bottom: 54,
+            left: 28,
+            right: 28,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(3),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.34),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: Colors.white.withOpacity(0.18)),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(999),
+                    child: LinearProgressIndicator(
+                      value: _progress,
+                      color: const Color(0xFF73DB9A),
+                      backgroundColor: Colors.white.withOpacity(0.18),
+                      minHeight: 8,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'LOADING GBAGAME... ${(_progress * 100).toInt()}%',
+                  style: GoogleFonts.outfit(
+                    color: Colors.white.withOpacity(0.85),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 2,
+                    shadows: [
+                      const Shadow(
+                        color: Colors.black54,
+                        blurRadius: 6,
+                        offset: Offset(0, 1),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -3177,7 +5014,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   const SizedBox(width: 16),
                   Expanded(
                     child: Text(
-                      'GBAGame: Gameboy Advance (GBA) ROMs',
+                      'GBAGame: GBA Homebrew',
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.outfit(
@@ -3305,6 +5142,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 ],
               ),
             ),
+            const AdBanner(),
           ],
         ),
       ),
@@ -3314,80 +5152,83 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   Widget _buildStep1() {
     return Padding(
       padding: const EdgeInsets.all(24.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: 12),
-          Text(
-            'Step 1',
-            style: GoogleFonts.jetBrainsMono(
-              fontSize: 14,
-              color: const Color(0xFF00E676),
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Search "GBAGame", "Gameboy Advance (GBA) ROMs", or "GBA Emulator" on Google Play to find this free app again, get updates, and share it with friends.',
-            style: GoogleFonts.outfit(
-              fontSize: 16,
-              color: Colors.white.withOpacity(0.9),
-              height: 1.5,
-            ),
-          ),
-          const Spacer(),
-          // Visual simulation
-          Center(
-            child: SizedBox(
-              height: 240,
-              width: 320,
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  // Highlighted Join Community Card
-                  const Positioned(
-                    top: 10,
-                    left: 10,
-                    right: 10,
-                    child: OnboardingCardSim(
-                      title: 'Join Community',
-                      subtitle:
-                          'Free updates, support, and legal game recommendations.',
-                      icon: Icons.discord,
-                      color: Color(0xFF5865F2),
-                      isHighlighted: true,
-                    ),
-                  ),
-                  // Faded Import & Play Card
-                  const Positioned(
-                    top: 110,
-                    left: 10,
-                    right: 10,
-                    child: OnboardingCardSim(
-                      title: 'Import & Play',
-                      subtitle: 'Load your legally obtained .gba or .zip ROMs.',
-                      icon: Icons.sports_esports_rounded,
-                      color: Color(0xFF73DB9A),
-                      isFaded: true,
-                    ),
-                  ),
-                  // Pointing hand pointing at the Join Community card
-                  Positioned(
-                    top: 55,
-                    right: 25,
-                    child: AnimatedPointer(
-                      child: Transform.rotate(
-                        angle: -0.2,
-                        child: const PointingHand(),
-                      ),
-                    ),
-                  ),
-                ],
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 12),
+            Text(
+              'Step 1',
+              style: GoogleFonts.jetBrainsMono(
+                fontSize: 14,
+                color: const Color(0xFF00E676),
+                fontWeight: FontWeight.bold,
               ),
             ),
-          ),
-          const Spacer(),
-        ],
+            const SizedBox(height: 8),
+            Text(
+              'Search "GBAGame: GBA Homebrew", "GBAGame", or "GBA Emulator" on Google Play to find this free app again, get updates, and share it with friends.',
+              style: GoogleFonts.outfit(
+                fontSize: 16,
+                color: Colors.white.withOpacity(0.9),
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 24),
+            // Visual simulation
+            Center(
+              child: SizedBox(
+                height: 240,
+                width: 320,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    // Highlighted Join Community Card
+                    const Positioned(
+                      top: 10,
+                      left: 10,
+                      right: 10,
+                      child: OnboardingCardSim(
+                        title: 'Join Community',
+                        subtitle:
+                            'Free updates, support, and legal game recommendations.',
+                        icon: Icons.discord,
+                        color: Color(0xFF5865F2),
+                        isHighlighted: true,
+                      ),
+                    ),
+                    // Faded Import & Play Card
+                    const Positioned(
+                      top: 110,
+                      left: 10,
+                      right: 10,
+                      child: OnboardingCardSim(
+                        title: 'Import & Play',
+                        subtitle:
+                            'Load your legally obtained .gba or .zip ROMs.',
+                        icon: Icons.sports_esports_rounded,
+                        color: Color(0xFF73DB9A),
+                        isFaded: true,
+                      ),
+                    ),
+                    // Pointing hand pointing at the Join Community card
+                    Positioned(
+                      top: 55,
+                      right: 25,
+                      child: AnimatedPointer(
+                        child: Transform.rotate(
+                          angle: -0.2,
+                          child: const PointingHand(),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+          ],
+        ),
       ),
     );
   }
@@ -3395,154 +5236,159 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   Widget _buildStep2() {
     return Padding(
       padding: const EdgeInsets.all(24.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: 12),
-          Text(
-            'Step 2',
-            style: GoogleFonts.jetBrainsMono(
-              fontSize: 14,
-              color: const Color(0xFF00E676),
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Discover free GBA homebrew and official demos from the app library. Download only games that are allowed for public distribution.',
-            style: GoogleFonts.outfit(
-              fontSize: 16,
-              color: Colors.white.withOpacity(0.9),
-              height: 1.5,
-            ),
-          ),
-          const Spacer(),
-          // Game cartridges stacked & download button
-          Center(
-            child: SizedBox(
-              height: 280,
-              width: 320,
-              child: Stack(
-                clipBehavior: Clip.none,
-                alignment: Alignment.center,
-                children: [
-                  // Zelda Cartridge (Left)
-                  Positioned(
-                    left: 20,
-                    top: 10,
-                    child: Transform.rotate(
-                      angle: -0.25,
-                      child: RetroCartridge(
-                        title: 'ZELDA',
-                        consoleText: 'GAME BOY ADVANCE',
-                        gradientColors: const [
-                          Color(0xFF004D40),
-                          Color(0xFF00C853),
-                        ],
-                        child: Icon(
-                          Icons.shield_rounded,
-                          color: Colors.yellow.shade700,
-                          size: 36,
-                        ),
-                      ),
-                    ),
-                  ),
-                  // Tekken Cartridge (Right)
-                  Positioned(
-                    right: 20,
-                    top: 15,
-                    child: Transform.rotate(
-                      angle: 0.22,
-                      child: const RetroCartridge(
-                        title: 'FIGHTERS',
-                        consoleText: 'GAME BOY ADVANCE',
-                        gradientColors: [Color(0xFFB71C1C), Color(0xFFE53935)],
-                        child: Icon(
-                          Icons.flash_on_rounded,
-                          color: Colors.amber,
-                          size: 36,
-                        ),
-                      ),
-                    ),
-                  ),
-                  // Pokemon Cartridge (Center)
-                  Positioned(
-                    top: 5,
-                    child: Transform.rotate(
-                      angle: -0.05,
-                      child: RetroCartridge(
-                        title: 'MONSTERS',
-                        consoleText: 'GAME BOY ADVANCE',
-                        gradientColors: const [
-                          Color(0xFFFF6D00),
-                          Color(0xFFFFD600),
-                        ],
-                        child: Icon(
-                          Icons.bolt_rounded,
-                          color: Colors.blue.shade900,
-                          size: 40,
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  // Download button simulating the website action
-                  Positioned(
-                    bottom: 20,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 24,
-                        vertical: 12,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF007AFF),
-                        borderRadius: BorderRadius.circular(30),
-                        boxShadow: [
-                          BoxShadow(
-                            color: const Color(0xFF007AFF).withOpacity(0.4),
-                            blurRadius: 12,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            'Download Games',
-                            style: GoogleFonts.outfit(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 15,
-                              color: Colors.white,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          const Icon(
-                            Icons.download_rounded,
-                            color: Colors.white,
-                            size: 18,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  // Pointing hand pointing at the Download Games button
-                  Positioned(
-                    bottom: 0,
-                    right: 40,
-                    child: AnimatedPointer(
-                      child: Transform.rotate(
-                        angle: -0.1,
-                        child: const PointingHand(),
-                      ),
-                    ),
-                  ),
-                ],
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 12),
+            Text(
+              'Step 2',
+              style: GoogleFonts.jetBrainsMono(
+                fontSize: 14,
+                color: const Color(0xFF00E676),
+                fontWeight: FontWeight.bold,
               ),
             ),
-          ),
-          const Spacer(),
-        ],
+            const SizedBox(height: 8),
+            Text(
+              'Discover free GBA homebrew and official demos from the app library. Download only games that are allowed for public distribution.',
+              style: GoogleFonts.outfit(
+                fontSize: 16,
+                color: Colors.white.withOpacity(0.9),
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 24),
+            // Game cartridges stacked & download button
+            Center(
+              child: SizedBox(
+                height: 280,
+                width: 320,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  alignment: Alignment.center,
+                  children: [
+                    // Zelda Cartridge (Left)
+                    Positioned(
+                      left: 20,
+                      top: 10,
+                      child: Transform.rotate(
+                        angle: -0.25,
+                        child: RetroCartridge(
+                          title: 'ZELDA',
+                          consoleText: 'GAME BOY ADVANCE',
+                          gradientColors: const [
+                            Color(0xFF004D40),
+                            Color(0xFF00C853),
+                          ],
+                          child: Icon(
+                            Icons.shield_rounded,
+                            color: Colors.yellow.shade700,
+                            size: 36,
+                          ),
+                        ),
+                      ),
+                    ),
+                    // Tekken Cartridge (Right)
+                    Positioned(
+                      right: 20,
+                      top: 15,
+                      child: Transform.rotate(
+                        angle: 0.22,
+                        child: const RetroCartridge(
+                          title: 'FIGHTERS',
+                          consoleText: 'GAME BOY ADVANCE',
+                          gradientColors: [
+                            Color(0xFFB71C1C),
+                            Color(0xFFE53935),
+                          ],
+                          child: Icon(
+                            Icons.flash_on_rounded,
+                            color: Colors.amber,
+                            size: 36,
+                          ),
+                        ),
+                      ),
+                    ),
+                    // Pokemon Cartridge (Center)
+                    Positioned(
+                      top: 5,
+                      child: Transform.rotate(
+                        angle: -0.05,
+                        child: RetroCartridge(
+                          title: 'MONSTERS',
+                          consoleText: 'GAME BOY ADVANCE',
+                          gradientColors: const [
+                            Color(0xFFFF6D00),
+                            Color(0xFFFFD600),
+                          ],
+                          child: Icon(
+                            Icons.bolt_rounded,
+                            color: Colors.blue.shade900,
+                            size: 40,
+                          ),
+                        ),
+                      ),
+                    ),
+
+                    // Download button simulating the website action
+                    Positioned(
+                      bottom: 20,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF007AFF),
+                          borderRadius: BorderRadius.circular(30),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF007AFF).withOpacity(0.4),
+                              blurRadius: 12,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'Download Games',
+                              style: GoogleFonts.outfit(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 15,
+                                color: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            const Icon(
+                              Icons.download_rounded,
+                              color: Colors.white,
+                              size: 18,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    // Pointing hand pointing at the Download Games button
+                    Positioned(
+                      bottom: 0,
+                      right: 40,
+                      child: AnimatedPointer(
+                        child: Transform.rotate(
+                          angle: -0.1,
+                          child: const PointingHand(),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+          ],
+        ),
       ),
     );
   }
@@ -3550,80 +5396,83 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   Widget _buildStep3() {
     return Padding(
       padding: const EdgeInsets.all(24.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: 12),
-          Text(
-            'Step 3',
-            style: GoogleFonts.jetBrainsMono(
-              fontSize: 14,
-              color: const Color(0xFF00E676),
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Use "Import & Play" to load your own legally obtained .gba or .zip files and turn your phone into a free portable GBA emulator.',
-            style: GoogleFonts.outfit(
-              fontSize: 16,
-              color: Colors.white.withOpacity(0.9),
-              height: 1.5,
-            ),
-          ),
-          const Spacer(),
-          // Simulator visualization
-          Center(
-            child: SizedBox(
-              height: 240,
-              width: 320,
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  // Faded Join Community Card
-                  const Positioned(
-                    top: 10,
-                    left: 10,
-                    right: 10,
-                    child: OnboardingCardSim(
-                      title: 'Join Community',
-                      subtitle:
-                          'Free updates, support, and legal game recommendations.',
-                      icon: Icons.discord,
-                      color: Color(0xFF5865F2),
-                      isFaded: true,
-                    ),
-                  ),
-                  // Highlighted Import & Play Card
-                  const Positioned(
-                    top: 110,
-                    left: 10,
-                    right: 10,
-                    child: OnboardingCardSim(
-                      title: 'Import & Play',
-                      subtitle: 'Load your legally obtained .gba or .zip ROMs.',
-                      icon: Icons.sports_esports_rounded,
-                      color: Color(0xFF73DB9A),
-                      isHighlighted: true,
-                    ),
-                  ),
-                  // Pointing hand pointing at the Import & Play card
-                  Positioned(
-                    top: 155,
-                    right: 25,
-                    child: AnimatedPointer(
-                      child: Transform.rotate(
-                        angle: -0.2,
-                        child: const PointingHand(),
-                      ),
-                    ),
-                  ),
-                ],
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 12),
+            Text(
+              'Step 3',
+              style: GoogleFonts.jetBrainsMono(
+                fontSize: 14,
+                color: const Color(0xFF00E676),
+                fontWeight: FontWeight.bold,
               ),
             ),
-          ),
-          const Spacer(),
-        ],
+            const SizedBox(height: 8),
+            Text(
+              'Use "Import & Play" to load your own legally obtained .gba or .zip files and turn your phone into a free portable GBA emulator.',
+              style: GoogleFonts.outfit(
+                fontSize: 16,
+                color: Colors.white.withOpacity(0.9),
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 24),
+            // Simulator visualization
+            Center(
+              child: SizedBox(
+                height: 240,
+                width: 320,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    // Faded Join Community Card
+                    const Positioned(
+                      top: 10,
+                      left: 10,
+                      right: 10,
+                      child: OnboardingCardSim(
+                        title: 'Join Community',
+                        subtitle:
+                            'Free updates, support, and legal game recommendations.',
+                        icon: Icons.discord,
+                        color: Color(0xFF5865F2),
+                        isFaded: true,
+                      ),
+                    ),
+                    // Highlighted Import & Play Card
+                    const Positioned(
+                      top: 110,
+                      left: 10,
+                      right: 10,
+                      child: OnboardingCardSim(
+                        title: 'Import & Play',
+                        subtitle:
+                            'Load your legally obtained .gba or .zip ROMs.',
+                        icon: Icons.sports_esports_rounded,
+                        color: Color(0xFF73DB9A),
+                        isHighlighted: true,
+                      ),
+                    ),
+                    // Pointing hand pointing at the Import & Play card
+                    Positioned(
+                      top: 155,
+                      right: 25,
+                      child: AnimatedPointer(
+                        child: Transform.rotate(
+                          angle: -0.2,
+                          child: const PointingHand(),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+          ],
+        ),
       ),
     );
   }

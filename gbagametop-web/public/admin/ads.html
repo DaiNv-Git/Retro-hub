@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ad Config Admin</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <style>
+    .admin-shell {
+      padding: 32px 0 56px;
+    }
+
+    .admin-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: end;
+      margin-bottom: 24px;
+    }
+
+    .admin-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+    }
+
+    .config-card {
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.05);
+      box-shadow: var(--shadow);
+    }
+
+    .config-card h2 {
+      margin-bottom: 14px;
+      font-size: 20px;
+    }
+
+    .field {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: center;
+      min-height: 46px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .field:first-of-type {
+      border-top: 0;
+    }
+
+    .field label {
+      color: var(--text);
+      font-weight: 800;
+    }
+
+    .field small {
+      display: block;
+      margin-top: 3px;
+      color: var(--muted);
+      font-weight: 500;
+      line-height: 1.35;
+    }
+
+    .field input[type="number"],
+    .token-input {
+      width: 112px;
+      height: 38px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text);
+      padding: 0 10px;
+    }
+
+    .token-input {
+      width: min(360px, 100%);
+    }
+
+    .switch input {
+      width: 22px;
+      height: 22px;
+      accent-color: var(--accent);
+    }
+
+    .admin-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      margin-top: 18px;
+    }
+
+    .status.ok {
+      color: var(--accent);
+    }
+
+    .status.error {
+      color: var(--danger);
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="../index.html">
+      <span class="brand-mark">G</span>
+      <span>
+        <strong>GBAGame Admin</strong>
+        <small>Remote ad configuration</small>
+      </span>
+    </a>
+    <nav class="nav">
+      <a href="../index.html">Website</a>
+      <a href="http://localhost:3000/api/app/ad-config" target="_blank" rel="noreferrer">API</a>
+    </nav>
+  </header>
+
+  <main class="admin-shell">
+    <section class="admin-header">
+      <div>
+        <p class="eyebrow">Ads Control</p>
+        <h1>Ad Config</h1>
+        <p class="hero-text">
+          Toggle ad surfaces and tune cooldowns. The Flutter app reads this from
+          <code>/api/app/ad-config</code> during splash startup.
+        </p>
+      </div>
+    </section>
+
+    <form id="adConfigForm">
+      <section class="config-card">
+        <h2>Admin Token</h2>
+        <div class="field">
+          <div>
+            <label for="adminToken">Token</label>
+            <small>Required only when the server has ADMIN_TOKEN set.</small>
+          </div>
+          <input class="token-input" id="adminToken" type="password" autocomplete="off" />
+        </div>
+      </section>
+
+      <div class="admin-grid" style="margin-top:16px">
+        <section class="config-card">
+          <h2>Enable / Disable</h2>
+          <div class="field">
+            <div><label>All ads</label><small>Master switch for every ad type.</small></div>
+            <span class="switch"><input name="adsEnabled" type="checkbox" /></span>
+          </div>
+          <div class="field">
+            <div><label>Bottom banner</label><small>Persistent banner above bottom navigation.</small></div>
+            <span class="switch"><input name="bannerEnabled" type="checkbox" /></span>
+          </div>
+          <div class="field">
+            <div><label>Inline banners</label><small>Banners inserted inside the Discover list.</small></div>
+            <span class="switch"><input name="inlineBannerEnabled" type="checkbox" /></span>
+          </div>
+          <div class="field">
+            <div><label>Interstitial</label><small>Full screen ads after download/play/action.</small></div>
+            <span class="switch"><input name="interstitialEnabled" type="checkbox" /></span>
+          </div>
+          <div class="field">
+            <div><label>Rewarded</label><small>Fast Download, Featured Picks, and Skin.</small></div>
+            <span class="switch"><input name="rewardedEnabled" type="checkbox" /></span>
+          </div>
+          <div class="field">
+            <div><label>App open</label><small>Ads on cold start and foreground return.</small></div>
+            <span class="switch"><input name="appOpenEnabled" type="checkbox" /></span>
+          </div>
+          <div class="field">
+            <div><label>Action interstitial</label><small>Extra ads after Play and other action taps.</small></div>
+            <span class="switch"><input name="actionInterstitialEnabled" type="checkbox" /></span>
+          </div>
+        </section>
+
+        <section class="config-card">
+          <h2>Ad Placements</h2>
+          <div class="field">
+            <div><label>Discover actions</label><small>Interstitial when tapping GET, OPEN, or PLAY in Discover.</small></div>
+            <span class="switch"><input name="discoverActionInterstitialEnabled" type="checkbox" /></span>
+          </div>
+          <div class="field">
+            <div><label>Saved game Play</label><small>Interstitial when tapping Play in downloaded/imported list cards.</small></div>
+            <span class="switch"><input name="savedGamePlayInterstitialEnabled" type="checkbox" /></span>
+          </div>
+          <div class="field">
+            <div><label>Import & Play result</label><small>Interstitial after choosing a local ROM to play.</small></div>
+            <span class="switch"><input name="importedGamePlayInterstitialEnabled" type="checkbox" /></span>
+          </div>
+          <div class="field">
+            <div><label>Console actions</label><small>Interstitial on Join Community, Import & Play, and Reset Tutorial.</small></div>
+            <span class="switch"><input name="consoleActionInterstitialEnabled" type="checkbox" /></span>
+          </div>
+          <div class="field">
+            <div><label>After download</label><small>Interstitial after a game download completes.</small></div>
+            <span class="switch"><input name="downloadCompleteInterstitialEnabled" type="checkbox" /></span>
+          </div>
+          <div class="field">
+            <div><label>After leaving game</label><small>Interstitial after returning from the emulator.</small></div>
+            <span class="switch"><input name="playExitInterstitialEnabled" type="checkbox" /></span>
+          </div>
+          <div class="field">
+            <div><label>Fast Download reward</label><small>Rewarded ad before boosted download.</small></div>
+            <span class="switch"><input name="fastDownloadRewardedEnabled" type="checkbox" /></span>
+          </div>
+          <div class="field">
+            <div><label>Featured Picks reward</label><small>Rewarded ad before unlocking suggestions.</small></div>
+            <span class="switch"><input name="featuredPicksRewardedEnabled" type="checkbox" /></span>
+          </div>
+          <div class="field">
+            <div><label>Skin reward</label><small>Rewarded ad before applying controller skin.</small></div>
+            <span class="switch"><input name="skinRewardedEnabled" type="checkbox" /></span>
+          </div>
+        </section>
+
+        <section class="config-card">
+          <h2>Frequency</h2>
+          <div class="field">
+            <div><label>Inline banner every</label><small>Number of games between inline banners. 0 disables.</small></div>
+            <input name="inlineBannerEvery" type="number" min="0" max="20" />
+          </div>
+          <div class="field">
+            <div><label>Download cooldown</label><small>Seconds between interstitials after downloads.</small></div>
+            <input name="downloadInterstitialCooldownSeconds" type="number" min="15" />
+          </div>
+          <div class="field">
+            <div><label>Play exit cooldown</label><small>Seconds between ads after leaving emulator.</small></div>
+            <input name="playExitInterstitialCooldownSeconds" type="number" min="15" />
+          </div>
+          <div class="field">
+            <div><label>Action cooldown</label><small>Seconds for extra action-tap interstitials.</small></div>
+            <input name="actionInterstitialCooldownSeconds" type="number" min="15" />
+          </div>
+          <div class="field">
+            <div><label>Featured unlock</label><small>Minutes Featured Picks stays unlocked.</small></div>
+            <input name="featuredUnlockMinutes" type="number" min="1" />
+          </div>
+        </section>
+
+        <section class="config-card">
+          <h2>App Open</h2>
+          <div class="field">
+            <div><label>Cold start cooldown</label><small>Minutes between app-open ads on launch.</small></div>
+            <input name="appOpenColdStartCooldownMinutes" type="number" min="1" />
+          </div>
+          <div class="field">
+            <div><label>Foreground cooldown</label><small>Minutes between app-open ads after returning.</small></div>
+            <input name="appOpenForegroundCooldownMinutes" type="number" min="1" />
+          </div>
+          <div class="field">
+            <div><label>Background threshold</label><small>Seconds app must stay backgrounded first.</small></div>
+            <input name="appOpenBackgroundThresholdSeconds" type="number" min="15" />
+          </div>
+          <div class="field">
+            <div><label>Launch threshold</label><small>App-open ads start from this launch count.</small></div>
+            <input name="appOpenLaunchThreshold" type="number" min="1" />
+          </div>
+        </section>
+      </div>
+
+      <div class="admin-actions">
+        <button class="button primary" type="submit">Save Config</button>
+        <button class="button secondary" type="button" id="reloadConfig">Reload</button>
+        <span id="status" class="status"></span>
+      </div>
+    </form>
+  </main>
+
+  <script src="../admin-ads.js"></script>
+</body>
+</html>
