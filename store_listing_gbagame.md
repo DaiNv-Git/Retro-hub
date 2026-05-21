@@ -24,6 +24,7 @@ Features:
 - Built-in GBA emulator experience
 - Retro gamepad interface
 - Fast launch with cached game library
+- Custom controller skins
 - Community link for updates and recommendations
 
 GBAGame does not include copyrighted commercial games. Only download or import games that are officially free, open-source, homebrew releases, or files that you have the legal right to use.
@@ -50,11 +51,13 @@ Secondary:
 
 ## Screenshot Captions
 
-1. Discover legal GBA homebrew games
-2. Import your own legal game files
-3. Save games for quick replay
-4. Play with a retro gamepad
-5. Join the community for updates
+1. Legal Homebrew Library
+2. Retro Gamepad Controls
+3. Import Your Own Files
+4. Your Saved Games
+5. Classic Handheld Picks
+6. Customize Controls
+7. Updates And Support
 
 ## Privacy Policy URL
 
