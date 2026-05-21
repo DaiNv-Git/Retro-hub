@@ -6,27 +6,27 @@ GBAGame: GBA Homebrew
 
 ## Short Description
 
-Play legal GBA homebrew games and your own classic files.
+Play legal homebrew games and your own game files.
 
 ## Full Description
 
-GBAGame is a clean GBA homebrew emulator built for classic handheld fans who want a simple way to discover legal games and play their own game files.
+GBAGame is a clean homebrew emulator built for handheld fans who want a simple way to discover legal games and play their own game files.
 
-Explore a curated library of legal GBA homebrew games, official demos, open-source projects, and public releases. Download supported homebrew titles, save them to your library, and launch them from a retro-style portable console interface.
+Explore a curated library of legal homebrew games, open-source projects, and public releases. Download supported homebrew titles, save them to your library, and launch them from a retro-style portable console interface.
 
-You can also import your own legally obtained `.gba` and `.zip` files for quick replay. GBAGame keeps your saved games local on your device so you can jump back into your collection whenever you want.
+You can also import your own legally obtained `.gba`, `.gb`, `.gbc`, and `.zip` files for quick replay. GBAGame keeps your saved games local on your device so you can jump back into your collection whenever you want.
 
 Features:
 
-- Discover legal GBA homebrew games and demos
-- Play your own `.gba` and `.zip` game files
+- Discover legal homebrew games
+- Play your own `.gba`, `.gb`, `.gbc`, and `.zip` game files
 - Save imported games for one-tap replay
 - Built-in GBA emulator experience
 - Retro gamepad interface
 - Fast launch with cached game library
 - Community link for updates and recommendations
 
-GBAGame does not include copyrighted commercial games. Only download or import games that are officially free, open-source, public demos, homebrew releases, or files that you have the legal right to use.
+GBAGame does not include copyrighted commercial games. Only download or import games that are officially free, open-source, homebrew releases, or files that you have the legal right to use.
 
 GBAGame is an independent app and is not affiliated with, endorsed by, or sponsored by Nintendo, Game Boy, Game Boy Advance, or any related trademark owner.
 
@@ -51,7 +51,7 @@ Secondary:
 ## Screenshot Captions
 
 1. Discover legal GBA homebrew games
-2. Import your own `.gba` files
+2. Import your own legal game files
 3. Save games for quick replay
 4. Play with a retro gamepad
 5. Join the community for updates

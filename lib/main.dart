@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:ui';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:archive/archive.dart';
 import 'package:flutter/material.dart';
@@ -20,7 +21,8 @@ class MyHttpOverrides extends HttpOverrides {
   @override
   HttpClient createHttpClient(SecurityContext? context) {
     return super.createHttpClient(context)
-      ..badCertificateCallback = (X509Certificate cert, String host, int port) => true;
+      ..badCertificateCallback =
+          (X509Certificate cert, String host, int port) => true;
   }
 }
 
@@ -117,8 +119,6 @@ class RemoteAdConfig {
   final bool consoleActionInterstitialEnabled;
   final bool downloadCompleteInterstitialEnabled;
   final bool playExitInterstitialEnabled;
-  final bool featuredPicksRewardedEnabled;
-  final bool skinRewardedEnabled;
   final int inlineBannerEvery;
   final int downloadInterstitialCooldownSeconds;
   final int playExitInterstitialCooldownSeconds;
@@ -127,7 +127,6 @@ class RemoteAdConfig {
   final int appOpenForegroundCooldownMinutes;
   final int appOpenBackgroundThresholdSeconds;
   final int appOpenLaunchThreshold;
-  final int featuredUnlockMinutes;
 
   const RemoteAdConfig({
     required this.adsEnabled,
@@ -143,8 +142,6 @@ class RemoteAdConfig {
     required this.consoleActionInterstitialEnabled,
     required this.downloadCompleteInterstitialEnabled,
     required this.playExitInterstitialEnabled,
-    required this.featuredPicksRewardedEnabled,
-    required this.skinRewardedEnabled,
     required this.inlineBannerEvery,
     required this.downloadInterstitialCooldownSeconds,
     required this.playExitInterstitialCooldownSeconds,
@@ -153,7 +150,6 @@ class RemoteAdConfig {
     required this.appOpenForegroundCooldownMinutes,
     required this.appOpenBackgroundThresholdSeconds,
     required this.appOpenLaunchThreshold,
-    required this.featuredUnlockMinutes,
   });
 
   static const defaults = RemoteAdConfig(
@@ -170,8 +166,6 @@ class RemoteAdConfig {
     consoleActionInterstitialEnabled: true,
     downloadCompleteInterstitialEnabled: true,
     playExitInterstitialEnabled: true,
-    featuredPicksRewardedEnabled: true,
-    skinRewardedEnabled: true,
     inlineBannerEvery: 2,
     downloadInterstitialCooldownSeconds: 45,
     playExitInterstitialCooldownSeconds: 60,
@@ -180,7 +174,6 @@ class RemoteAdConfig {
     appOpenForegroundCooldownMinutes: 5,
     appOpenBackgroundThresholdSeconds: 90,
     appOpenLaunchThreshold: 2,
-    featuredUnlockMinutes: 30,
   );
 
   factory RemoteAdConfig.fromJson(Map<String, dynamic> json) {
@@ -221,12 +214,6 @@ class RemoteAdConfig {
       playExitInterstitialEnabled:
           config['playExitInterstitialEnabled'] as bool? ??
           defaults.playExitInterstitialEnabled,
-      featuredPicksRewardedEnabled:
-          config['featuredPicksRewardedEnabled'] as bool? ??
-          defaults.featuredPicksRewardedEnabled,
-      skinRewardedEnabled:
-          config['skinRewardedEnabled'] as bool? ??
-          defaults.skinRewardedEnabled,
       inlineBannerEvery:
           (config['inlineBannerEvery'] as num?)?.round() ??
           defaults.inlineBannerEvery,
@@ -251,9 +238,6 @@ class RemoteAdConfig {
       appOpenLaunchThreshold:
           (config['appOpenLaunchThreshold'] as num?)?.round() ??
           defaults.appOpenLaunchThreshold,
-      featuredUnlockMinutes:
-          (config['featuredUnlockMinutes'] as num?)?.round() ??
-          defaults.featuredUnlockMinutes,
     );
   }
 }
@@ -274,6 +258,7 @@ class AdService {
   bool _appOpenListenerStarted = false;
   bool _coldStartAppOpenAllowed = false;
   DateTime? _lastInterstitialShownAt;
+  DateTime? _lastPlayExitInterstitialShownAt;
   DateTime? _lastAppOpenShownAt;
   DateTime? _lastBackgroundedAt;
   DateTime? _appOpenLoadTime;
@@ -644,45 +629,46 @@ class AdService {
     );
   }
 
-  void showInterstitialWhenReady({
+  bool showInterstitialWhenReady({
     Duration minInterval = const Duration(seconds: 15),
   }) {
     if (!_adsEnabled ||
         !_remoteConfig.interstitialEnabled ||
         _isShowingInterstitial) {
-      return;
+      return false;
     }
     if (!_initialized) {
       unawaited(initialize());
-      return;
+      return false;
     }
 
     final lastShownAt = _lastInterstitialShownAt;
     if (lastShownAt != null &&
         DateTime.now().difference(lastShownAt) < minInterval) {
       _loadInterstitial();
-      return;
+      return false;
     }
 
     if (_interstitialAd == null) {
       _loadInterstitial();
-      return;
+      return false;
     }
 
-    showInterstitialIfReady();
+    return showInterstitialIfReady();
   }
 
-  void showInterstitialIfReady() {
-    if (_isShowingInterstitial) return;
+  bool showInterstitialIfReady() {
+    if (_isShowingInterstitial) return false;
     final ad = _interstitialAd;
     if (ad == null) {
       _loadInterstitial();
-      return;
+      return false;
     }
     _interstitialAd = null;
     _isShowingInterstitial = true;
     _lastInterstitialShownAt = DateTime.now();
     ad.show();
+    return true;
   }
 
   Future<void> pauseBannerForExternalUi() async {
@@ -701,6 +687,24 @@ class AdService {
         seconds: _remoteConfig.actionInterstitialCooldownSeconds,
       ),
     );
+  }
+
+  void showPlayExitInterstitial({
+    required bool placementEnabled,
+    required Duration minInterval,
+  }) {
+    if (!_remoteConfig.playExitInterstitialEnabled || !placementEnabled) return;
+    final lastShownAt = _lastPlayExitInterstitialShownAt;
+    if (lastShownAt != null &&
+        DateTime.now().difference(lastShownAt) < minInterval) {
+      _loadInterstitial();
+      return;
+    }
+
+    final shown = showInterstitialWhenReady(minInterval: Duration.zero);
+    if (shown) {
+      _lastPlayExitInterstitialShownAt = DateTime.now();
+    }
   }
 }
 
@@ -754,7 +758,10 @@ class _MockAdDialogState extends State<MockAdDialog> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: const Color(0xFF9D4EDD).withOpacity(0.2),
                     borderRadius: BorderRadius.circular(6),
@@ -770,7 +777,10 @@ class _MockAdDialogState extends State<MockAdDialog> {
                 ),
                 if (_secondsLeft == 0)
                   IconButton(
-                    icon: const Icon(Icons.close_rounded, color: Colors.white60),
+                    icon: const Icon(
+                      Icons.close_rounded,
+                      color: Colors.white60,
+                    ),
                     onPressed: () => Navigator.of(context).pop(),
                   )
                 else
@@ -798,10 +808,7 @@ class _MockAdDialogState extends State<MockAdDialog> {
               Text(
                 'Watching sponsor video to unlock reward...',
                 textAlign: TextAlign.center,
-                style: GoogleFonts.outfit(
-                  fontSize: 14,
-                  color: Colors.white70,
-                ),
+                style: GoogleFonts.outfit(fontSize: 14, color: Colors.white70),
               ),
             ] else ...[
               const Icon(
@@ -951,6 +958,7 @@ class GamepadSkin {
   final Color border;
   final Color accent;
   final Color text;
+  final String? patternType;
 
   const GamepadSkin({
     required this.id,
@@ -961,6 +969,7 @@ class GamepadSkin {
     required this.border,
     required this.accent,
     required this.text,
+    this.patternType,
   });
 }
 
@@ -1036,6 +1045,50 @@ const List<GamepadSkin> availableGamepadSkins = [
     accent: Color(0xFF5FA8D3),
     text: Colors.white,
   ),
+  GamepadSkin(
+    id: 'vietnam',
+    name: 'Vietnam Heritage',
+    panel: Color(0xFF8B0000),
+    surface: Color(0xFFB22222),
+    pressedSurface: Color(0xFFFFD700),
+    border: Color(0xFFFFD700),
+    accent: Color(0xFFFFD700),
+    text: Colors.white,
+    patternType: 'vietnam',
+  ),
+  GamepadSkin(
+    id: 'sakura',
+    name: 'Sakura Blossom',
+    panel: Color(0xFFFFC0CB),
+    surface: Color(0xFFFFE4E1),
+    pressedSurface: Color(0xFFFFB6C1),
+    border: Color(0xFFDB7093),
+    accent: Color(0xFFFF69B4),
+    text: Color(0xFF8B008B),
+    patternType: 'sakura',
+  ),
+  GamepadSkin(
+    id: 'cyberpunk',
+    name: 'Cyber Matrix',
+    panel: Color(0xFF0A0E1A),
+    surface: Color(0xFF151D33),
+    pressedSurface: Color(0xFF00FFFF),
+    border: Color(0xFFFF007F),
+    accent: Color(0xFF00FFFF),
+    text: Colors.white,
+    patternType: 'cyber',
+  ),
+  GamepadSkin(
+    id: 'carbon',
+    name: 'Carbon Fiber Pro',
+    panel: Color(0xFF1E1E1E),
+    surface: Color(0xFF2C2C2C),
+    pressedSurface: Color(0xFFD3D3D3),
+    border: Color(0xFF4E4E4E),
+    accent: Color(0xFFFF4500),
+    text: Colors.white,
+    patternType: 'carbon',
+  ),
 ];
 
 class HomebrewGame {
@@ -1079,12 +1132,13 @@ class HomebrewGame {
     return HomebrewGame(
       title: title,
       developer: '$region • v$version',
-      description: '$platform game available from the GBA Game Top library.',
+      description:
+          '$platform homebrew game available from the GBA Game Top library.',
       coverUrl: json['thumbnail'] as String? ?? '',
       downloadUrl: downloadUrl,
       fileName: fileName,
       officialPageUrl: json['sourceUrl'] as String? ?? downloadUrl,
-      category: platform.replaceFirst('Game Boy Advance', 'GBA'),
+      category: _platformCategory(platform),
       fileSize: fileName.toLowerCase().endsWith('.zip') ? 'ZIP ROM' : 'ROM',
       rating: 4.8,
     );
@@ -1152,7 +1206,9 @@ class ImportGameOptions {
 const String _importedGamesPrefsKey = 'imported_games';
 const String _remoteGamesPrefsKey = 'remote_homebrew_games_v1';
 const String _downloadedGamesFilter = 'Downloaded';
+const String _classicGameBoyFilter = 'GB/GBC';
 const String _apiBaseUrl = 'https://gbagametop.shop';
+const Duration _gameplaySkinInterstitialCooldown = Duration(minutes: 1);
 
 String _decodeHtml(String value) {
   return value
@@ -1192,6 +1248,15 @@ String _formatFileSize(int bytes) {
   if (bytes >= mb) return '${(bytes / mb).toStringAsFixed(1)} MB';
   if (bytes >= kb) return '${(bytes / kb).toStringAsFixed(1)} KB';
   return '$bytes B';
+}
+
+String _platformCategory(String platform) {
+  final normalized = platform.toLowerCase();
+  if (normalized == 'gb' || normalized == 'game boy') return 'Game Boy';
+  if (normalized == 'gbc' || normalized == 'game boy color') {
+    return 'Game Boy Color';
+  }
+  return platform.replaceFirst('Game Boy Advance', 'GBA');
 }
 
 // Fallback games used only when the remote API cannot be reached.
@@ -1239,17 +1304,49 @@ final List<HomebrewGame> fallbackGames = [
     rating: 4.9,
   ),
   const HomebrewGame(
-    title: 'Goodboy Galaxy Demo',
-    developer: 'Goodboy Galaxy / exelotl',
+    title: '2048gb',
+    developer: 'Sanqui',
     description:
-        'The official free Chapter Zero demo for Game Boy Advance, published by the developers.',
-    coverUrl: 'https://www.goodboygalaxy.com/screenshots2/ss0_en.png',
-    downloadUrl: '',
-    fileName: '',
-    officialPageUrl: 'https://goodboygalaxy.itch.io/goodboy-galaxy-demo',
-    category: 'Platformer',
-    fileSize: 'Free demo',
-    rating: 4.8,
+        'A Zlib-licensed Game Boy port of the 2048 puzzle game, distributed through Homebrew Hub and the developer source.',
+    coverUrl:
+        'https://raw.githubusercontent.com/gbdev/database/master/entries/2048gb/1.png',
+    downloadUrl:
+        'https://raw.githubusercontent.com/gbdev/database/master/entries/2048gb/2048.gb',
+    fileName: '2048.gb',
+    officialPageUrl: 'https://github.com/Sanqui/2048-gb',
+    category: 'Game Boy',
+    fileSize: 'GB ROM',
+    rating: 4.7,
+  ),
+  const HomebrewGame(
+    title: 'Flappy Boy',
+    developer: 'Felipe Alfonso',
+    description:
+        'A compact MIT-licensed arcade homebrew for the original Game Boy.',
+    coverUrl:
+        'https://raw.githubusercontent.com/gbdev/database/master/entries/flappy-boy/screenshot.png',
+    downloadUrl:
+        'https://raw.githubusercontent.com/gbdev/database/master/entries/flappy-boy/flappyboy.gb',
+    fileName: 'flappyboy.gb',
+    officialPageUrl: 'https://github.com/bitnenfer/FlappyBoy',
+    category: 'Game Boy',
+    fileSize: 'GB ROM',
+    rating: 4.6,
+  ),
+  const HomebrewGame(
+    title: 'Snek!',
+    developer: 'zlago',
+    description:
+        'An MIT-licensed snake-style Game Boy Color homebrew that also runs on classic Game Boy-compatible emulators.',
+    coverUrl:
+        'https://raw.githubusercontent.com/gbdev/database/master/entries/snek-gbc/title-s.png',
+    downloadUrl:
+        'https://raw.githubusercontent.com/gbdev/database/master/entries/snek-gbc/pong.gb',
+    fileName: 'snek-gbc.gb',
+    officialPageUrl: 'https://github.com/zlago/snek-gbc',
+    category: 'Game Boy Color',
+    fileSize: 'GB ROM',
+    rating: 4.7,
   ),
 ];
 
@@ -1375,8 +1472,6 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
   final Set<String> _downloadedGames = {};
   bool _isLoadingSaved = true;
   bool _isLoadingGames = true;
-  bool _featuredUnlockInProgress = false;
-  DateTime? _featuredUnlockedUntil;
   String? _gamesError;
   RemoteAdConfig get _adConfig => AdService.instance.config;
 
@@ -1393,29 +1488,17 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
   }
 
   Future<void> _loadInitialData() async {
-    await _loadFeaturedUnlock();
     await _loadCachedRemoteGames();
     await _loadDownloadedGames();
     unawaited(_loadRemoteGames());
   }
 
-  bool get _hasFeaturedUnlock {
-    final unlockedUntil = _featuredUnlockedUntil;
-    return unlockedUntil != null && DateTime.now().isBefore(unlockedUntil);
-  }
-
-  Future<void> _loadFeaturedUnlock() async {
-    final prefs = await SharedPreferences.getInstance();
-    final savedMillis = prefs.getInt('featured_picks_unlocked_until');
-    if (savedMillis == null) return;
-
-    final unlockedUntil = DateTime.fromMillisecondsSinceEpoch(savedMillis);
-    if (DateTime.now().isAfter(unlockedUntil)) {
-      await prefs.remove('featured_picks_unlocked_until');
-      return;
-    }
-
-    _featuredUnlockedUntil = unlockedUntil;
+  bool _isClassicGameBoyGame(HomebrewGame game) {
+    final fileName = game.fileName.toLowerCase();
+    return game.category == 'Game Boy' ||
+        game.category == 'Game Boy Color' ||
+        fileName.endsWith('.gb') ||
+        fileName.endsWith('.gbc');
   }
 
   Future<void> _loadCachedRemoteGames() async {
@@ -1434,8 +1517,16 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
       final cachedGames = rawItems
           .whereType<Map<String, dynamic>>()
           .map(HomebrewGame.fromApiJson)
+          .where((game) => game.hasDirectDownload)
           .toList();
       if (cachedGames.isEmpty) return;
+
+      final seenTitles = cachedGames.map((g) => g.title).toSet();
+      for (final game in fallbackGames) {
+        if (_isClassicGameBoyGame(game) && seenTitles.add(game.title)) {
+          cachedGames.add(game);
+        }
+      }
 
       if (!mounted) return;
       setState(() {
@@ -1475,8 +1566,15 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
       final remoteGames = rawItems
           .whereType<Map<String, dynamic>>()
           .map(HomebrewGame.fromApiJson)
+          .where((game) => game.hasDirectDownload)
           .where((game) => seenTitles.add(game.title))
           .toList();
+
+      for (final game in fallbackGames) {
+        if (_isClassicGameBoyGame(game) && seenTitles.add(game.title)) {
+          remoteGames.add(game);
+        }
+      }
 
       if (remoteGames.isEmpty) {
         throw Exception('No games returned from API');
@@ -1552,88 +1650,6 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
     }
   }
 
-
-
-  List<HomebrewGame> _featuredSuggestions() {
-    final candidates =
-        _games
-            .where(
-              (game) =>
-                  game.hasDirectDownload &&
-                  !_downloadedGames.contains(game.title) &&
-                  !_downloadProgress.containsKey(game.title),
-            )
-            .toList()
-          ..sort((a, b) => b.rating.compareTo(a.rating));
-
-    if (_selectedCategory == 'All' ||
-        _selectedCategory == _downloadedGamesFilter) {
-      return candidates.take(4).toList();
-    }
-
-    final categoryMatches = candidates
-        .where((game) => game.category == _selectedCategory)
-        .toList();
-    final otherMatches = candidates
-        .where((game) => game.category != _selectedCategory)
-        .toList();
-    return [...categoryMatches, ...otherMatches].take(4).toList();
-  }
-
-  Future<void> _showRewardedFeaturedSuggestions() async {
-    if (_featuredUnlockInProgress) return;
-    setState(() => _featuredUnlockInProgress = true);
-
-    try {
-      if (!_hasFeaturedUnlock) {
-        final earned = _adConfig.featuredPicksRewardedEnabled
-            ? await AdService.instance.showRewardedAd(
-                context: context,
-                unavailableMessage:
-                    'Featured picks ad is loading. Try again soon.',
-              )
-            : true;
-        if (!mounted || !earned) return;
-
-        final unlockedUntil = DateTime.now().add(
-          Duration(minutes: AdService.instance.config.featuredUnlockMinutes),
-        );
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setInt(
-          'featured_picks_unlocked_until',
-          unlockedUntil.millisecondsSinceEpoch,
-        );
-        if (!mounted) return;
-        setState(() {
-          _featuredUnlockedUntil = unlockedUntil;
-        });
-      }
-
-      final suggestions = _featuredSuggestions();
-      if (suggestions.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No featured suggestions available now.'),
-          ),
-        );
-        return;
-      }
-
-      await showModalBottomSheet<void>(
-        context: context,
-        backgroundColor: Colors.transparent,
-        isScrollControlled: true,
-        builder: (sheetContext) {
-          return _buildFeaturedSuggestionSheet(sheetContext, suggestions);
-        },
-      );
-    } finally {
-      if (mounted) {
-        setState(() => _featuredUnlockInProgress = false);
-      }
-    }
-  }
-
   Future<void> _downloadAndPlay(HomebrewGame game) async {
     if (!game.hasDirectDownload) {
       await _openOfficialPage(game);
@@ -1692,8 +1708,8 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
             bytes.addAll(chunk);
             updateProgress(chunk);
           }
-          final gbaBytes = _extractGbaFromZip(bytes);
-          await file.writeAsBytes(gbaBytes);
+          final romBytes = _extractRomFromZip(bytes);
+          await file.writeAsBytes(romBytes);
         } else {
           final sink = file.openWrite();
           try {
@@ -1747,21 +1763,21 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
     }
   }
 
-  List<int> _extractGbaFromZip(List<int> zipBytes) {
+  List<int> _extractRomFromZip(List<int> zipBytes) {
     final archive = ZipDecoder().decodeBytes(zipBytes);
-    final gbaFile = archive.files.cast<ArchiveFile?>().firstWhere(
+    final romFile = archive.files.cast<ArchiveFile?>().firstWhere(
       (file) =>
           file != null &&
           file.isFile &&
-          file.name.toLowerCase().endsWith('.gba'),
+          RegExp(r'\.(gba|gb|gbc)$').hasMatch(file.name.toLowerCase()),
       orElse: () => null,
     );
 
-    if (gbaFile == null) {
-      throw Exception('No .gba file found in downloaded ZIP');
+    if (romFile == null) {
+      throw Exception('No .gba, .gb, or .gbc file found in downloaded ZIP');
     }
 
-    return gbaFile.readBytes()!;
+    return romFile.readBytes()!;
   }
 
   Future<void> _playGame(String romPath, {String? coverUrl}) async {
@@ -1772,13 +1788,12 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
       context,
       rootNavigator: true,
     ).push(_buildEmulatorRoute(romPath, coverUrl: coverUrl));
-    if (_adConfig.playExitInterstitialEnabled) {
-      AdService.instance.showInterstitialWhenReady(
-        minInterval: Duration(
-          seconds: _adConfig.playExitInterstitialCooldownSeconds,
-        ),
-      );
-    }
+    AdService.instance.showPlayExitInterstitial(
+      placementEnabled: _adConfig.playExitInterstitialEnabled,
+      minInterval: Duration(
+        seconds: _adConfig.playExitInterstitialCooldownSeconds,
+      ),
+    );
   }
 
   Future<void> _openOfficialPage(HomebrewGame game) async {
@@ -1797,12 +1812,18 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
   @override
   Widget build(BuildContext context) {
     // Categories List
+    final hasClassicGameBoyGames = _games.any(_isClassicGameBoyGame);
     final List<String> categories = [
       'All',
+      if (hasClassicGameBoyGames) _classicGameBoyFilter,
+      ..._games.map((game) => game.category).where((category) {
+        if (!hasClassicGameBoyGames) return true;
+        return category != 'Game Boy' && category != 'Game Boy Color';
+      }).toSet(),
       _downloadedGamesFilter,
-      ..._games.map((game) => game.category).toSet(),
     ];
     final isDownloadedTab = _selectedCategory == _downloadedGamesFilter;
+    final isClassicGameBoyTab = _selectedCategory == _classicGameBoyFilter;
 
     // Filter games
     final filteredGames = _games.where((game) {
@@ -1813,6 +1834,7 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
       final matchesCategory =
           _selectedCategory == 'All' ||
           (isDownloadedTab && _downloadedGames.contains(game.title)) ||
+          (isClassicGameBoyTab && _isClassicGameBoyGame(game)) ||
           game.category == _selectedCategory;
       return matchesSearch && matchesCategory;
     }).toList();
@@ -1992,11 +2014,7 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
               ),
               const SizedBox(height: 12),
 
-              if (!isDownloadedTab) ...[
-                _buildRewardedActionRow(),
-                const SizedBox(height: 20),
-              ] else
-                const SizedBox(height: 8),
+              const SizedBox(height: 8),
 
               // Game lists
               Expanded(
@@ -2050,19 +2068,6 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
     );
   }
 
-  Widget _buildRewardedActionRow() {
-    return _buildRewardedShortcutButton(
-      label: _hasFeaturedUnlock ? 'Picks Unlocked' : 'Featured Picks',
-      icon: _featuredUnlockInProgress
-          ? Icons.hourglass_top_rounded
-          : Icons.auto_awesome_rounded,
-      color: const Color(0xFF73DB9A),
-      onTap: _featuredUnlockInProgress
-          ? null
-          : _showRewardedFeaturedSuggestions,
-    );
-  }
-
   List<Widget> _buildGameFeed(List<HomebrewGame> games) {
     final widgets = <Widget>[];
     final adConfig = AdService.instance.config;
@@ -2097,235 +2102,6 @@ class _HomebrewLibraryScreenState extends State<HomebrewLibraryScreen> {
         border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
       ),
       child: const AdBanner(),
-    );
-  }
-
-  Widget _buildRewardedShortcutButton({
-    required String label,
-    required IconData icon,
-    required Color color,
-    required VoidCallback? onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedOpacity(
-        duration: const Duration(milliseconds: 160),
-        opacity: onTap == null ? 0.62 : 1,
-        child: Container(
-          height: 42,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: color.withValues(alpha: 0.28)),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, color: color, size: 18),
-              const SizedBox(width: 6),
-              Flexible(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.outfit(
-                    color: Colors.white,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFeaturedSuggestionSheet(
-    BuildContext sheetContext,
-    List<HomebrewGame> suggestions,
-  ) {
-    final maxHeight = MediaQuery.sizeOf(sheetContext).height * 0.72;
-    final maxUnlockMinutes = AdService.instance.config.featuredUnlockMinutes;
-    final unlockMinutes = _featuredUnlockedUntil
-        ?.difference(DateTime.now())
-        .inMinutes
-        .clamp(1, maxUnlockMinutes);
-    return Container(
-      decoration: const BoxDecoration(
-        color: Color(0xFF151026),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      child: SafeArea(
-        top: false,
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxHeight: maxHeight),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const Icon(
-                      Icons.auto_awesome_rounded,
-                      color: Color(0xFF73DB9A),
-                      size: 22,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Featured Picks',
-                        style: GoogleFonts.outfit(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      onPressed: () => Navigator.of(sheetContext).pop(),
-                      icon: const Icon(Icons.close_rounded),
-                      color: Colors.white60,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                if (unlockMinutes != null) ...[
-                  Text(
-                    'Unlocked for $unlockMinutes min',
-                    style: GoogleFonts.jetBrainsMono(
-                      color: Colors.white.withValues(alpha: 0.45),
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                ],
-                Flexible(
-                  child: ListView.separated(
-                    shrinkWrap: true,
-                    itemCount: suggestions.length,
-                    separatorBuilder: (context, index) =>
-                        const SizedBox(height: 10),
-                    itemBuilder: (context, index) {
-                      return _buildFeaturedSuggestionTile(
-                        sheetContext,
-                        suggestions[index],
-                      );
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFeaturedSuggestionTile(
-    BuildContext sheetContext,
-    HomebrewGame game,
-  ) {
-    final isDownloading = _downloadProgress.containsKey(game.title);
-    final progress = _downloadProgress[game.title] ?? 0.0;
-
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-      ),
-      child: Row(
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: SizedBox(
-              width: 54,
-              height: 54,
-              child: CachedNetworkImage(
-                imageUrl: game.coverUrl,
-                fit: BoxFit.cover,
-                placeholder: (context, url) =>
-                    Container(color: const Color(0xFF0B0914)),
-                errorWidget: (context, url, error) => Container(
-                  color: const Color(0xFF0B0914),
-                  child: const Icon(
-                    Icons.sports_esports_rounded,
-                    color: Colors.white38,
-                  ),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  game.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.outfit(
-                    color: Colors.white,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  '${game.category} • ${game.fileSize} • ${game.rating}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.outfit(
-                    color: Colors.white54,
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 10),
-          FilledButton.icon(
-            onPressed: isDownloading
-                ? null
-                : () {
-                    Navigator.of(sheetContext).pop();
-                    AdService.instance.showActionInterstitial(
-                      placementEnabled:
-                          _adConfig.discoverActionInterstitialEnabled,
-                    );
-                    unawaited(
-                      _downloadAndPlay(game),
-                    );
-                  },
-            icon: Icon(
-              isDownloading
-                  ? Icons.downloading_rounded
-                  : Icons.cloud_download_rounded,
-              size: 16,
-            ),
-            label: Text(isDownloading ? '${(progress * 100).toInt()}%' : 'Get'),
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFF73DB9A),
-              foregroundColor: Colors.black,
-              disabledBackgroundColor: Colors.white12,
-              disabledForegroundColor: Colors.white54,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-              textStyle: GoogleFonts.outfit(
-                fontSize: 12,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -2854,13 +2630,12 @@ class _ImportedGamesScreenState extends State<ImportedGamesScreen> {
       context,
       rootNavigator: true,
     ).push(_buildEmulatorRoute(game.path));
-    if (_adConfig.playExitInterstitialEnabled) {
-      AdService.instance.showInterstitialWhenReady(
-        minInterval: Duration(
-          seconds: _adConfig.playExitInterstitialCooldownSeconds,
-        ),
-      );
-    }
+    AdService.instance.showPlayExitInterstitial(
+      placementEnabled: _adConfig.playExitInterstitialEnabled,
+      minInterval: Duration(
+        seconds: _adConfig.playExitInterstitialCooldownSeconds,
+      ),
+    );
   }
 
   Future<void> _removeGame(ImportedGame game) async {
@@ -3095,12 +2870,165 @@ class _ConsoleConfigScreenState extends State<ConsoleConfigScreen> {
     }
   }
 
+  Future<void> _changeDefaultSkin() async {
+    GamepadSkin localSelectedSkin = _globalSelectedGamepadSkin;
+
+    final selectedSkin = await showDialog<GamepadSkin>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              backgroundColor: const Color(0xFF151026),
+              title: Text(
+                'Default Controller Skin',
+                style: GoogleFonts.outfit(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              content: Container(
+                width: double.maxFinite,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Center(child: GamepadMiniPreview(skin: localSelectedSkin)),
+                    const SizedBox(height: 20),
+                    Flexible(
+                      child: Container(
+                        height: 260,
+                        child: ListView.builder(
+                          shrinkWrap: true,
+                          itemCount: availableGamepadSkins.length,
+                          itemBuilder: (context, index) {
+                            final skin = availableGamepadSkins[index];
+                            final isSelected = skin.id == localSelectedSkin.id;
+                            final isCurrentActive =
+                                skin.id == _globalSelectedGamepadSkin.id;
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 10),
+                              decoration: BoxDecoration(
+                                color: skin.panel.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: isSelected
+                                      ? skin.border
+                                      : skin.border.withValues(alpha: 0.3),
+                                  width: isSelected ? 2 : 1,
+                                ),
+                              ),
+                              child: ListTile(
+                                leading: CircleAvatar(
+                                  backgroundColor: skin.accent,
+                                  radius: 12,
+                                ),
+                                title: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        skin.name,
+                                        style: GoogleFonts.outfit(
+                                          color: Colors.white,
+                                          fontWeight: isSelected
+                                              ? FontWeight.bold
+                                              : FontWeight.normal,
+                                        ),
+                                      ),
+                                    ),
+                                    if (isCurrentActive)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                          vertical: 2,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white12,
+                                          borderRadius: BorderRadius.circular(
+                                            4,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          'Active',
+                                          style: GoogleFonts.outfit(
+                                            color: Colors.white70,
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                                trailing: isSelected
+                                    ? Icon(
+                                        Icons.radio_button_checked,
+                                        color: skin.accent,
+                                      )
+                                    : const Icon(
+                                        Icons.radio_button_off,
+                                        color: Colors.white30,
+                                      ),
+                                onTap: () {
+                                  setState(() {
+                                    localSelectedSkin = skin;
+                                  });
+                                },
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: Text(
+                    'Cancel',
+                    style: GoogleFonts.outfit(color: Colors.white60),
+                  ),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.of(context).pop(localSelectedSkin),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: localSelectedSkin.accent,
+                    foregroundColor: localSelectedSkin.text,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: Text(
+                    'Apply Skin',
+                    style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (selectedSkin == null ||
+        selectedSkin.id == _globalSelectedGamepadSkin.id) {
+      return;
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('default_gamepad_skin', selectedSkin.id);
+
+    setState(() {
+      _globalSelectedGamepadSkin = selectedSkin;
+    });
+  }
+
   Future<void> _importGame() async {
     try {
       await AdService.instance.pauseBannerForExternalUi();
       final result = await FilePicker.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['gba', 'zip'],
+        allowedExtensions: ['gba', 'gb', 'gbc', 'zip'],
       );
       AdService.instance.resumeBanner();
       if (result != null && result.files.single.path != null) {
@@ -3168,13 +3096,12 @@ class _ConsoleConfigScreenState extends State<ConsoleConfigScreen> {
       context,
       rootNavigator: true,
     ).push(_buildEmulatorRoute(playablePath));
-    if (_adConfig.playExitInterstitialEnabled) {
-      AdService.instance.showInterstitialWhenReady(
-        minInterval: Duration(
-          seconds: _adConfig.playExitInterstitialCooldownSeconds,
-        ),
-      );
-    }
+    AdService.instance.showPlayExitInterstitial(
+      placementEnabled: _adConfig.playExitInterstitialEnabled,
+      minInterval: Duration(
+        seconds: _adConfig.playExitInterstitialCooldownSeconds,
+      ),
+    );
 
     if (!mounted || importedGame == null) return;
     widget.onGameImported();
@@ -3334,10 +3261,19 @@ class _ConsoleConfigScreenState extends State<ConsoleConfigScreen> {
             const SizedBox(height: 16),
             _buildActionCard(
               title: 'Import & Play',
-              subtitle: 'Load your legally obtained .gba or .zip ROMs.',
+              subtitle:
+                  'Load your legally obtained .gba, .gb, .gbc, or .zip ROMs.',
               icon: Icons.sports_esports_rounded,
               color: const Color(0xFF73DB9A),
               onTap: _importGame,
+            ),
+            const SizedBox(height: 16),
+            _buildActionCard(
+              title: 'Default Skin',
+              subtitle: 'Current default: ${_globalSelectedGamepadSkin.name}',
+              icon: Icons.palette_rounded,
+              color: const Color(0xFFC77DFF),
+              onTap: _changeDefaultSkin,
             ),
             const SizedBox(height: 16),
             _buildActionCard(
@@ -3742,34 +3678,25 @@ class _EmulatorScreenState extends State<EmulatorScreen> {
   Future<void> _unlockNextGamepadSkin() async {
     if (_skinUnlockInProgress) return;
     setState(() => _skinUnlockInProgress = true);
+    AdService.instance.showInterstitialWhenReady(
+      minInterval: _gameplaySkinInterstitialCooldown,
+    );
 
     try {
-      final earned = AdService.instance.config.skinRewardedEnabled
-          ? await AdService.instance.showRewardedAd(
-              context: context,
-              unavailableMessage: 'Skin ad is loading. Try again soon.',
-            )
-          : true;
-      if (!mounted || !earned) return;
-
       final currentIndex = availableGamepadSkins.indexWhere(
         (skin) => skin.id == _gamepadSkin.id,
       );
       final nextIndex = (currentIndex + 1) % availableGamepadSkins.length;
       final nextSkin = availableGamepadSkins[nextIndex];
 
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('default_gamepad_skin', nextSkin.id);
+
+      if (!mounted) return;
       setState(() {
         _gamepadSkin = nextSkin;
         _globalSelectedGamepadSkin = nextSkin;
       });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('${nextSkin.name} controller skin applied.'),
-          backgroundColor: nextSkin.accent,
-          duration: const Duration(seconds: 2),
-        ),
-      );
     } finally {
       if (mounted) {
         setState(() => _skinUnlockInProgress = false);
@@ -3996,149 +3923,168 @@ class _EmulatorScreenState extends State<EmulatorScreen> {
                                 ),
                               ],
                             ),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 24.0,
-                                vertical: 8.0,
-                              ),
-                              child: Column(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  // Row 1: Save, Load, Menu action buttons
-                                  Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      GamepadActionButton(
-                                        icon: Icons.save_outlined,
-                                        label: 'Save',
-                                        onTap: _triggerSave,
-                                        skin: _gamepadSkin,
-                                      ),
-                                      Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          GamepadActionButton(
-                                            icon: Icons.unarchive_outlined,
-                                            label: 'Load',
-                                            onTap: _triggerLoad,
-                                            skin: _gamepadSkin,
-                                          ),
-                                          const SizedBox(width: 10),
-                                          GamepadActionButton(
-                                            icon: _skinUnlockInProgress
-                                                ? Icons.hourglass_top_rounded
-                                                : Icons.palette_outlined,
-                                            label: 'Skin',
-                                            onTap: _skinUnlockInProgress
-                                                ? () {}
-                                                : _unlockNextGamepadSkin,
-                                            skin: _gamepadSkin,
-                                          ),
-                                          const SizedBox(width: 10),
-                                          GamepadActionButton(
-                                            icon: Icons.more_vert_rounded,
-                                            onTap: _triggerMenu,
-                                            skin: _gamepadSkin,
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-
-                                  // Row 2: L, SELECT, START, R shoulder & command buttons
-                                  Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      RectGamepadButton(
-                                        label: 'L',
-                                        inputValue: _inputL,
-                                        onInput: _sendInput,
-                                        width: 55,
-                                        skin: _gamepadSkin,
-                                      ),
-                                      Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          RectGamepadButton(
-                                            label: 'SELECT',
-                                            inputValue: _inputSelect,
-                                            onInput: _sendInput,
-                                            width: 80,
-                                            skin: _gamepadSkin,
-                                          ),
-                                          const SizedBox(width: 12),
-                                          RectGamepadButton(
-                                            label: 'START',
-                                            inputValue: _inputStart,
-                                            onInput: _sendInput,
-                                            width: 80,
-                                            skin: _gamepadSkin,
-                                          ),
-                                        ],
-                                      ),
-                                      RectGamepadButton(
-                                        label: 'R',
-                                        inputValue: _inputR,
-                                        onInput: _sendInput,
-                                        width: 55,
-                                        skin: _gamepadSkin,
-                                      ),
-                                    ],
-                                  ),
-
-                                  // Row 3: D-pad (left) & A/B Buttons (right)
-                                  Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      // D-Pad
-                                      DPadWidget(
-                                        upInput: _inputUp,
-                                        downInput: _inputDown,
-                                        leftInput: _inputLeft,
-                                        rightInput: _inputRight,
-                                        onInput: _sendInput,
-                                        skin: _gamepadSkin,
-                                      ),
-
-                                      // A/B Action Buttons Stacked in diagonal layout
-                                      SizedBox(
-                                        width: 160,
-                                        height: 160,
-                                        child: Stack(
-                                          children: [
-                                            // Button B (Lower Left)
-                                            Positioned(
-                                              bottom: 12,
-                                              left: 8,
-                                              child: GamepadButton(
-                                                label: 'B',
-                                                inputValue: _inputB,
-                                                onInput: _sendInput,
-                                                skin: _gamepadSkin,
-                                              ),
-                                            ),
-                                            // Button A (Upper Right)
-                                            Positioned(
-                                              top: 12,
-                                              right: 8,
-                                              child: GamepadButton(
-                                                label: 'A',
-                                                inputValue: _inputA,
-                                                onInput: _sendInput,
-                                                skin: _gamepadSkin,
-                                              ),
-                                            ),
-                                          ],
+                            child: Stack(
+                              children: [
+                                if (_gamepadSkin.patternType != null)
+                                  Positioned.fill(
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(28),
+                                      child: CustomPaint(
+                                        painter: GamepadPatternPainter(
+                                          patternType:
+                                              _gamepadSkin.patternType!,
+                                          accentColor: _gamepadSkin.accent,
+                                          borderColor: _gamepadSkin.border,
                                         ),
                                       ),
+                                    ),
+                                  ),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 24.0,
+                                    vertical: 8.0,
+                                  ),
+                                  child: Column(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      // Row 1: Save, Load, Menu action buttons
+                                      Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          GamepadActionButton(
+                                            icon: Icons.save_outlined,
+                                            label: 'Save',
+                                            onTap: _triggerSave,
+                                            skin: _gamepadSkin,
+                                          ),
+                                          Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              GamepadActionButton(
+                                                icon: Icons.unarchive_outlined,
+                                                label: 'Load',
+                                                onTap: _triggerLoad,
+                                                skin: _gamepadSkin,
+                                              ),
+                                              const SizedBox(width: 10),
+                                              GamepadActionButton(
+                                                icon: _skinUnlockInProgress
+                                                    ? Icons
+                                                          .hourglass_top_rounded
+                                                    : Icons.palette_outlined,
+                                                label: 'Skin',
+                                                onTap: _skinUnlockInProgress
+                                                    ? () {}
+                                                    : _unlockNextGamepadSkin,
+                                                skin: _gamepadSkin,
+                                              ),
+                                              const SizedBox(width: 10),
+                                              GamepadActionButton(
+                                                icon: Icons.more_vert_rounded,
+                                                onTap: _triggerMenu,
+                                                skin: _gamepadSkin,
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+
+                                      // Row 2: L, SELECT, START, R shoulder & command buttons
+                                      Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          RectGamepadButton(
+                                            label: 'L',
+                                            inputValue: _inputL,
+                                            onInput: _sendInput,
+                                            width: 55,
+                                            skin: _gamepadSkin,
+                                          ),
+                                          Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              RectGamepadButton(
+                                                label: 'SELECT',
+                                                inputValue: _inputSelect,
+                                                onInput: _sendInput,
+                                                width: 80,
+                                                skin: _gamepadSkin,
+                                              ),
+                                              const SizedBox(width: 12),
+                                              RectGamepadButton(
+                                                label: 'START',
+                                                inputValue: _inputStart,
+                                                onInput: _sendInput,
+                                                width: 80,
+                                                skin: _gamepadSkin,
+                                              ),
+                                            ],
+                                          ),
+                                          RectGamepadButton(
+                                            label: 'R',
+                                            inputValue: _inputR,
+                                            onInput: _sendInput,
+                                            width: 55,
+                                            skin: _gamepadSkin,
+                                          ),
+                                        ],
+                                      ),
+
+                                      // Row 3: D-pad (left) & A/B Buttons (right)
+                                      Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          // D-Pad
+                                          DPadWidget(
+                                            upInput: _inputUp,
+                                            downInput: _inputDown,
+                                            leftInput: _inputLeft,
+                                            rightInput: _inputRight,
+                                            onInput: _sendInput,
+                                            skin: _gamepadSkin,
+                                          ),
+
+                                          // A/B Action Buttons Stacked in diagonal layout
+                                          SizedBox(
+                                            width: 160,
+                                            height: 160,
+                                            child: Stack(
+                                              children: [
+                                                // Button B (Lower Left)
+                                                Positioned(
+                                                  bottom: 12,
+                                                  left: 8,
+                                                  child: GamepadButton(
+                                                    label: 'B',
+                                                    inputValue: _inputB,
+                                                    onInput: _sendInput,
+                                                    skin: _gamepadSkin,
+                                                  ),
+                                                ),
+                                                // Button A (Upper Right)
+                                                Positioned(
+                                                  top: 12,
+                                                  right: 8,
+                                                  child: GamepadButton(
+                                                    label: 'A',
+                                                    inputValue: _inputA,
+                                                    onInput: _sendInput,
+                                                    skin: _gamepadSkin,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
                                     ],
                                   ),
-                                ],
-                              ),
+                                ),
+                              ],
                             ),
                           ),
                         ),
@@ -4753,6 +4699,14 @@ class _SplashScreenState extends State<SplashScreen> {
     await _runStartupStep(0.36, () async {
       final prefs = await SharedPreferences.getInstance();
       _showOnboarding = prefs.getBool('show_onboarding') ?? true;
+      final defaultSkinId = prefs.getString('default_gamepad_skin');
+      if (defaultSkinId != null) {
+        final savedSkin = availableGamepadSkins.firstWhere(
+          (skin) => skin.id == defaultSkinId,
+          orElse: () => availableGamepadSkins.first,
+        );
+        _globalSelectedGamepadSkin = savedSkin;
+      }
     });
 
     await _runStartupStep(0.56, () async {
@@ -5196,7 +5150,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       child: OnboardingCardSim(
                         title: 'Import & Play',
                         subtitle:
-                            'Load your legally obtained .gba or .zip ROMs.',
+                            'Load your legally obtained .gba, .gb, .gbc, or .zip ROMs.',
                         icon: Icons.sports_esports_rounded,
                         color: Color(0xFF73DB9A),
                         isFaded: true,
@@ -5242,7 +5196,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Discover free GBA homebrew and official demos from the app library. Download only games that are allowed for public distribution.',
+              'Discover free homebrew from the app library. Download only games that are allowed for public distribution.',
               style: GoogleFonts.outfit(
                 fontSize: 16,
                 color: Colors.white.withOpacity(0.9),
@@ -5259,15 +5213,15 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   clipBehavior: Clip.none,
                   alignment: Alignment.center,
                   children: [
-                    // Zelda Cartridge (Left)
+                    // Homebrew Cartridge (Left)
                     Positioned(
                       left: 20,
                       top: 10,
                       child: Transform.rotate(
                         angle: -0.25,
                         child: RetroCartridge(
-                          title: 'ZELDA',
-                          consoleText: 'GAME BOY ADVANCE',
+                          title: 'QUEST',
+                          consoleText: 'HOMEBREW',
                           gradientColors: const [
                             Color(0xFF004D40),
                             Color(0xFF00C853),
@@ -5280,7 +5234,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         ),
                       ),
                     ),
-                    // Tekken Cartridge (Right)
+                    // Action Cartridge (Right)
                     Positioned(
                       right: 20,
                       top: 15,
@@ -5288,7 +5242,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         angle: 0.22,
                         child: const RetroCartridge(
                           title: 'FIGHTERS',
-                          consoleText: 'GAME BOY ADVANCE',
+                          consoleText: 'HOMEBREW',
                           gradientColors: [
                             Color(0xFFB71C1C),
                             Color(0xFFE53935),
@@ -5301,14 +5255,14 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         ),
                       ),
                     ),
-                    // Pokemon Cartridge (Center)
+                    // Arcade Cartridge (Center)
                     Positioned(
                       top: 5,
                       child: Transform.rotate(
                         angle: -0.05,
                         child: RetroCartridge(
                           title: 'MONSTERS',
-                          consoleText: 'GAME BOY ADVANCE',
+                          consoleText: 'HOMEBREW',
                           gradientColors: const [
                             Color(0xFFFF6D00),
                             Color(0xFFFFD600),
@@ -5345,7 +5299,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
-                              'Download Games',
+                              'Download Homebrew',
                               style: GoogleFonts.outfit(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 15,
@@ -5402,7 +5356,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Use "Import & Play" to load your own legally obtained .gba or .zip files and turn your phone into a free portable GBA emulator.',
+              'Use "Import & Play" to load your own legally obtained .gba, .gb, .gbc, or .zip files and turn your phone into a free portable emulator.',
               style: GoogleFonts.outfit(
                 fontSize: 16,
                 color: Colors.white.withOpacity(0.9),
@@ -5440,7 +5394,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       child: OnboardingCardSim(
                         title: 'Import & Play',
                         subtitle:
-                            'Load your legally obtained .gba or .zip ROMs.',
+                            'Load your legally obtained .gba, .gb, .gbc, or .zip ROMs.',
                         icon: Icons.sports_esports_rounded,
                         color: Color(0xFF73DB9A),
                         isHighlighted: true,
@@ -5856,4 +5810,495 @@ class OnboardingCardSim extends StatelessWidget {
       ),
     );
   }
+}
+
+class GamepadMiniPreview extends StatelessWidget {
+  final GamepadSkin skin;
+
+  const GamepadMiniPreview({super.key, required this.skin});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 220,
+      height: 140,
+      decoration: BoxDecoration(
+        color: skin.panel,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: skin.border, width: 2),
+        boxShadow: [
+          BoxShadow(
+            color: skin.accent.withOpacity(0.25),
+            blurRadius: 10,
+            spreadRadius: 1,
+          ),
+        ],
+      ),
+      child: Stack(
+        children: [
+          if (skin.patternType != null)
+            Positioned.fill(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: CustomPaint(
+                  painter: GamepadPatternPainter(
+                    patternType: skin.patternType!,
+                    accentColor: skin.accent,
+                    borderColor: skin.border,
+                    isMini: true,
+                  ),
+                ),
+              ),
+            ),
+          // L shoulder
+          Positioned(
+            top: 6,
+            left: 8,
+            child: Container(
+              width: 35,
+              height: 8,
+              decoration: BoxDecoration(
+                color: skin.surface,
+                borderRadius: BorderRadius.circular(2),
+                border: Border.all(
+                  color: skin.border.withOpacity(0.5),
+                  width: 1,
+                ),
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                'L',
+                style: TextStyle(
+                  fontSize: 5,
+                  color: skin.text,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+          // R shoulder
+          Positioned(
+            top: 6,
+            right: 8,
+            child: Container(
+              width: 35,
+              height: 8,
+              decoration: BoxDecoration(
+                color: skin.surface,
+                borderRadius: BorderRadius.circular(2),
+                border: Border.all(
+                  color: skin.border.withOpacity(0.5),
+                  width: 1,
+                ),
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                'R',
+                style: TextStyle(
+                  fontSize: 5,
+                  color: skin.text,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+          // D-Pad
+          Positioned(
+            left: 16,
+            top: 45,
+            child: SizedBox(
+              width: 44,
+              height: 44,
+              child: Stack(
+                children: [
+                  // Horizontal bar
+                  Align(
+                    alignment: Alignment.center,
+                    child: Container(
+                      width: 44,
+                      height: 14,
+                      decoration: BoxDecoration(
+                        color: skin.surface,
+                        borderRadius: BorderRadius.circular(3),
+                        border: Border.all(
+                          color: skin.border.withOpacity(0.5),
+                          width: 1,
+                        ),
+                      ),
+                    ),
+                  ),
+                  // Vertical bar
+                  Align(
+                    alignment: Alignment.center,
+                    child: Container(
+                      width: 14,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: skin.surface,
+                        borderRadius: BorderRadius.circular(3),
+                        border: Border.all(
+                          color: skin.border.withOpacity(0.5),
+                          width: 1,
+                        ),
+                      ),
+                    ),
+                  ),
+                  // Center dot
+                  Align(
+                    alignment: Alignment.center,
+                    child: Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: skin.accent,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          // SELECT/START
+          Positioned(
+            bottom: 12,
+            left: 70,
+            right: 70,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Container(
+                  width: 18,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: skin.surface,
+                    borderRadius: BorderRadius.circular(1),
+                  ),
+                ),
+                Container(
+                  width: 18,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: skin.surface,
+                    borderRadius: BorderRadius.circular(1),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // A/B Buttons
+          Positioned(
+            right: 16,
+            top: 36,
+            child: SizedBox(
+              width: 56,
+              height: 56,
+              child: Stack(
+                children: [
+                  // B Button
+                  Positioned(
+                    bottom: 0,
+                    left: 0,
+                    child: Container(
+                      width: 24,
+                      height: 24,
+                      decoration: BoxDecoration(
+                        color: skin.surface,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: skin.border, width: 1),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        'B',
+                        style: GoogleFonts.outfit(
+                          fontSize: 10,
+                          color: skin.text,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                  // A Button
+                  Positioned(
+                    top: 0,
+                    right: 0,
+                    child: Container(
+                      width: 24,
+                      height: 24,
+                      decoration: BoxDecoration(
+                        color: skin.surface,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: skin.border, width: 1),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        'A',
+                        style: GoogleFonts.outfit(
+                          fontSize: 10,
+                          color: skin.text,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class GamepadPatternPainter extends CustomPainter {
+  final String patternType;
+  final Color accentColor;
+  final Color borderColor;
+  final bool isMini;
+
+  GamepadPatternPainter({
+    required this.patternType,
+    required this.accentColor,
+    required this.borderColor,
+    this.isMini = false,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (patternType == 'vietnam') {
+      final paint = Paint()
+        ..color = accentColor.withOpacity(0.08)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = isMini ? 1.0 : 2.0;
+
+      final center = Offset(size.width / 2, size.height / 2);
+      canvas.drawCircle(center, isMini ? 15 : 35, paint);
+      canvas.drawCircle(center, isMini ? 25 : 65, paint);
+      canvas.drawCircle(center, isMini ? 35 : 95, paint);
+
+      final rayPaint = Paint()
+        ..color = accentColor.withOpacity(0.05)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = isMini ? 1.0 : 1.5;
+      canvas.drawCircle(center, isMini ? 45 : 125, rayPaint);
+
+      final starPaint = Paint()
+        ..color = accentColor.withOpacity(0.08)
+        ..style = PaintingStyle.fill;
+
+      final starPath = _getStarPath(
+        center.dx,
+        center.dy,
+        5,
+        isMini ? 10 : 24,
+        isMini ? 4 : 10,
+      );
+      canvas.drawPath(starPath, starPaint);
+    } else if (patternType == 'sakura') {
+      final petalPaint = Paint()
+        ..color = accentColor.withOpacity(0.12)
+        ..style = PaintingStyle.fill;
+
+      _drawCherryBlossom(
+        canvas,
+        size.width * 0.2,
+        size.height * 0.25,
+        isMini ? 6 : 14,
+        petalPaint,
+      );
+      _drawCherryBlossom(
+        canvas,
+        size.width * 0.8,
+        size.height * 0.75,
+        isMini ? 7 : 16,
+        petalPaint,
+      );
+      _drawCherryBlossom(
+        canvas,
+        size.width * 0.5,
+        size.height * 0.3,
+        isMini ? 5 : 12,
+        petalPaint,
+      );
+
+      final singlePetalPaint = Paint()
+        ..color = accentColor.withOpacity(0.08)
+        ..style = PaintingStyle.fill;
+      _drawPetal(
+        canvas,
+        size.width * 0.35,
+        size.height * 0.6,
+        isMini ? 2.5 : 6,
+        singlePetalPaint,
+      );
+      _drawPetal(
+        canvas,
+        size.width * 0.65,
+        size.height * 0.45,
+        isMini ? 3 : 7,
+        singlePetalPaint,
+      );
+      _drawPetal(
+        canvas,
+        size.width * 0.15,
+        size.height * 0.7,
+        isMini ? 2 : 5,
+        singlePetalPaint,
+      );
+    } else if (patternType == 'cyber') {
+      final gridPaint = Paint()
+        ..color = accentColor.withOpacity(0.06)
+        ..strokeWidth = 1.0
+        ..style = PaintingStyle.stroke;
+
+      int linesCount = isMini ? 6 : 14;
+      double spacingX = size.width / linesCount;
+      for (int i = 1; i < linesCount; i++) {
+        canvas.drawLine(
+          Offset(i * spacingX, 0),
+          Offset(i * spacingX, size.height),
+          gridPaint,
+        );
+      }
+
+      int rowsCount = isMini ? 4 : 8;
+      double spacingY = size.height / rowsCount;
+      for (int i = 1; i < rowsCount; i++) {
+        canvas.drawLine(
+          Offset(0, i * spacingY),
+          Offset(size.width, i * spacingY),
+          gridPaint,
+        );
+      }
+
+      final cornerPaint = Paint()
+        ..color = borderColor.withOpacity(0.15)
+        ..strokeWidth = isMini ? 1.5 : 2.5
+        ..style = PaintingStyle.stroke;
+
+      double offset = isMini ? 6.0 : 16.0;
+      double len = isMini ? 10.0 : 25.0;
+
+      canvas.drawLine(
+        Offset(offset, offset),
+        Offset(offset + len, offset),
+        cornerPaint,
+      );
+      canvas.drawLine(
+        Offset(offset, offset),
+        Offset(offset, offset + len),
+        cornerPaint,
+      );
+
+      canvas.drawLine(
+        Offset(size.width - offset, size.height - offset),
+        Offset(size.width - offset - len, size.height - offset),
+        cornerPaint,
+      );
+      canvas.drawLine(
+        Offset(size.width - offset, size.height - offset),
+        Offset(size.width - offset, size.height - offset - len),
+        cornerPaint,
+      );
+    } else if (patternType == 'carbon') {
+      final carbonPaint = Paint()
+        ..color = Colors.black.withOpacity(0.18)
+        ..style = PaintingStyle.fill;
+      double sizePattern = isMini ? 4.0 : 8.0;
+      for (double x = 0; x < size.width; x += sizePattern * 2) {
+        for (double y = 0; y < size.height; y += sizePattern * 2) {
+          canvas.drawRect(
+            Rect.fromLTWH(x, y, sizePattern, sizePattern),
+            carbonPaint,
+          );
+          canvas.drawRect(
+            Rect.fromLTWH(
+              x + sizePattern,
+              y + sizePattern,
+              sizePattern,
+              sizePattern,
+            ),
+            carbonPaint,
+          );
+        }
+      }
+    }
+  }
+
+  Path _getStarPath(
+    double cx,
+    double cy,
+    int spikes,
+    double outerRadius,
+    double innerRadius,
+  ) {
+    Path path = Path();
+    double rot = math.pi / 2 * 3;
+    double x = cx;
+    double y = cy;
+    double step = math.pi / spikes;
+
+    path.moveTo(cx, cy - outerRadius);
+    for (int i = 0; i < spikes; i++) {
+      x = cx + math.cos(rot) * outerRadius;
+      y = cy + math.sin(rot) * outerRadius;
+      path.lineTo(x, y);
+      rot += step;
+
+      x = cx + math.cos(rot) * innerRadius;
+      y = cy + math.sin(rot) * innerRadius;
+      path.lineTo(x, y);
+      rot += step;
+    }
+    path.lineTo(cx, cy - outerRadius);
+    path.close();
+    return path;
+  }
+
+  void _drawCherryBlossom(
+    Canvas canvas,
+    double cx,
+    double cy,
+    double radius,
+    Paint paint,
+  ) {
+    for (int i = 0; i < 5; i++) {
+      double angle = (i * 2 * math.pi / 5) - math.pi / 2;
+      double petalX = cx + math.cos(angle) * radius * 0.6;
+      double petalY = cy + math.sin(angle) * radius * 0.6;
+      canvas.drawCircle(Offset(petalX, petalY), radius * 0.55, paint);
+    }
+    final stamenPaint = Paint()
+      ..color = Colors.white.withOpacity(0.45)
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(Offset(cx, cy), radius * 0.25, stamenPaint);
+  }
+
+  void _drawPetal(
+    Canvas canvas,
+    double cx,
+    double cy,
+    double radius,
+    Paint paint,
+  ) {
+    Path path = Path();
+    path.moveTo(cx, cy - radius);
+    path.quadraticBezierTo(cx + radius, cy - radius * 0.5, cx, cy + radius);
+    path.quadraticBezierTo(
+      cx - radius * 0.8,
+      cy + radius * 0.2,
+      cx,
+      cy - radius,
+    );
+    path.close();
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant GamepadPatternPainter oldDelegate) =>
+      oldDelegate.patternType != patternType ||
+      oldDelegate.accentColor != accentColor ||
+      oldDelegate.borderColor != borderColor ||
+      oldDelegate.isMini != isMini;
 }

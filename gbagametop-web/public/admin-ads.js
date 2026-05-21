@@ -18,8 +18,6 @@ const defaultConfig = {
   consoleActionInterstitialEnabled: true,
   downloadCompleteInterstitialEnabled: true,
   playExitInterstitialEnabled: true,
-  featuredPicksRewardedEnabled: true,
-  skinRewardedEnabled: true,
   inlineBannerEvery: 2,
   downloadInterstitialCooldownSeconds: 45,
   playExitInterstitialCooldownSeconds: 60,
@@ -28,7 +26,6 @@ const defaultConfig = {
   appOpenForegroundCooldownMinutes: 5,
   appOpenBackgroundThresholdSeconds: 90,
   appOpenLaunchThreshold: 2,
-  featuredUnlockMinutes: 30,
 };
 
 const booleanFields = [
@@ -45,8 +42,6 @@ const booleanFields = [
   'consoleActionInterstitialEnabled',
   'downloadCompleteInterstitialEnabled',
   'playExitInterstitialEnabled',
-  'featuredPicksRewardedEnabled',
-  'skinRewardedEnabled',
 ];
 
 const numberFields = [
@@ -58,7 +53,6 @@ const numberFields = [
   'appOpenForegroundCooldownMinutes',
   'appOpenBackgroundThresholdSeconds',
   'appOpenLaunchThreshold',
-  'featuredUnlockMinutes',
 ];
 
 function setStatus(message, type = '') {

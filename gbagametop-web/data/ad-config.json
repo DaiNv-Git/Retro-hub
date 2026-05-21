@@ -12,8 +12,6 @@
   "consoleActionInterstitialEnabled": true,
   "downloadCompleteInterstitialEnabled": true,
   "playExitInterstitialEnabled": true,
-  "featuredPicksRewardedEnabled": true,
-  "skinRewardedEnabled": true,
   "inlineBannerEvery": 2,
   "downloadInterstitialCooldownSeconds": 45,
   "playExitInterstitialCooldownSeconds": 60,
@@ -21,6 +19,5 @@
   "appOpenColdStartCooldownMinutes": 10,
   "appOpenForegroundCooldownMinutes": 5,
   "appOpenBackgroundThresholdSeconds": 90,
-  "appOpenLaunchThreshold": 2,
-  "featuredUnlockMinutes": 30
+  "appOpenLaunchThreshold": 2
 }

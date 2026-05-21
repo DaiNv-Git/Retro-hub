@@ -39,8 +39,6 @@ const defaultAdConfig = {
   consoleActionInterstitialEnabled: true,
   downloadCompleteInterstitialEnabled: true,
   playExitInterstitialEnabled: true,
-  featuredPicksRewardedEnabled: true,
-  skinRewardedEnabled: true,
   inlineBannerEvery: 2,
   downloadInterstitialCooldownSeconds: 45,
   playExitInterstitialCooldownSeconds: 60,
@@ -49,7 +47,6 @@ const defaultAdConfig = {
   appOpenForegroundCooldownMinutes: 5,
   appOpenBackgroundThresholdSeconds: 90,
   appOpenLaunchThreshold: 2,
-  featuredUnlockMinutes: 30,
 };
 
 let publicCache = {
@@ -129,9 +126,6 @@ function normalizeAdConfig(input = {}) {
     downloadCompleteInterstitialEnabled:
       merged.downloadCompleteInterstitialEnabled !== false,
     playExitInterstitialEnabled: merged.playExitInterstitialEnabled !== false,
-    featuredPicksRewardedEnabled:
-      merged.featuredPicksRewardedEnabled !== false,
-    skinRewardedEnabled: merged.skinRewardedEnabled !== false,
     inlineBannerEvery: clampNumber(merged.inlineBannerEvery, 0, 20, 2),
     downloadInterstitialCooldownSeconds: clampNumber(
       merged.downloadInterstitialCooldownSeconds,
@@ -170,7 +164,6 @@ function normalizeAdConfig(input = {}) {
       90,
     ),
     appOpenLaunchThreshold: clampNumber(merged.appOpenLaunchThreshold, 1, 100, 2),
-    featuredUnlockMinutes: clampNumber(merged.featuredUnlockMinutes, 1, 1440, 30),
   };
 }
 
